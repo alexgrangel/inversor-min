@@ -1,0 +1,29 @@
+name: venue-probe
+
+# Sonda de un solo paso (Prompt 2 del HANDOFF): comprueba desde la IP real del
+# runner qué venue de precios responde y con qué código falla el que no.
+# La hipótesis: Binance → HTTP 451 (bloqueo geográfico a IPs de EE.UU.),
+# Kraken → OK. El job FALLA si Kraken no es alcanzable desde CI, porque eso
+# invalida la arquitectura del cron y hay que enterarse aquí, no en producción.
+
+on: workflow_dispatch
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sondear los tres venues desde la IP del runner
+        working-directory: engine
+        env:
+          PYTHONPATH: src
+        # pipefail: sin él, el exit 1 del veredicto se lo traga el pipe a tee
+        run: |
+          set -o pipefail
+          python -m inversor.scripts.venue_probe | tee -a "$GITHUB_STEP_SUMMARY"
