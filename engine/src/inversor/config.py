@@ -118,8 +118,41 @@ class Policy:
     # Si no exiges prima, estás comprando volatilidad gratis.
     required_risk_premium: float = 0.0500  # 500 pb
 
-    # Días máximos de antigüedad de un dato antes de marcarlo stale.
+    # Días máximos de antigüedad de un dato antes de marcarlo stale, para
+    # series DIARIAS (FIX, tasa objetivo, precios cripto). 5 tolera el peor
+    # puente bancario normal; una serie diaria con 6+ días es un problema real.
     max_staleness_days: int = 5
+
+    # Límites por serie para lo que NO publica diario. Un límite uniforme de 5
+    # bloqueaba por diseño: la primera corrida real (10-ago-2026, lunes)
+    # bloqueó con CETES a 6 días —la subasta es SEMANAL, martes 4-ago— y con
+    # inpc_anual a 40 días —la inflación anual es MENSUAL, fechada al día 1
+    # del mes de referencia. Regla 4 intacta: rancio de verdad sigue
+    # bloqueando; esto sólo define "rancio" según el calendario real de cada
+    # fuente.
+    staleness_days_by_key: dict[str, int] = field(default_factory=lambda: {
+        # Subasta semanal de CETES (martes, serie fechada a la subasta): el
+        # dato vigente llega a 7 días el martes siguiente si el cron (14:00
+        # CDMX) corre antes de los resultados (~13:30, sin garantía). 9 da
+        # margen de un feriado que mueva la subasta; una subasta perdida
+        # (13+ días) bloquea. Fuente: calendario de subastas de valores
+        # gubernamentales de Banxico; dato del 4-ago verificado 10-ago-2026.
+        "cetes_28": 9,
+        "cetes_91": 9,
+        "cetes_182": 9,
+        "cetes_364": 9,
+        # SP30578 es mensual y viene fechada al día 1 del mes de REFERENCIA;
+        # INEGI publica el INPC de un mes ~el día 9 del mes siguiente. Peor
+        # caso normal: la víspera de la publicación, el dato vigente (día 1
+        # del mes anterior) tiene ~69-70 días. 75 tolera esa aritmética más
+        # un retraso corto; un mes de publicación perdido (~100) bloquea.
+        # Fuente: calendario de difusión del INEGI; dato del 01-jul con 40
+        # días verificado 10-ago-2026.
+        "inpc_anual": 75,
+    })
+
+    def staleness_limit(self, key: str) -> int:
+        return self.staleness_days_by_key.get(key, self.max_staleness_days)
 
     def to_dict(self) -> dict:
         return asdict(self)

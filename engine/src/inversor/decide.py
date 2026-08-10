@@ -53,9 +53,13 @@ class Decision:
         return asdict(self)
 
 
-def _freshness(obs: dict[str, bx.Observation], max_days: int) -> tuple[dict, list[str]]:
+def _freshness(obs: dict[str, bx.Observation], policy: Policy) -> tuple[dict, list[str]]:
+    # El límite es POR SERIE: "rancio" depende del calendario de publicación
+    # de cada fuente (la subasta de CETES es semanal, el INPC mensual). Un
+    # límite uniforme convertía el calendario normal en bloqueo permanente.
     out, stale = {}, []
     for k, o in obs.items():
+        max_days = policy.staleness_limit(k)
         out[k] = {
             "series_id": o.series_id,
             "value": o.value,
@@ -91,7 +95,7 @@ def decide(
     # Antes se calculaba todo y se bloqueaba al final, dejando el snapshot
     # lleno de hurdle, sizing y required_returns derivados de datos viejos.
     # Regla 4 de CLAUDE.md: los datos rancios bloquean, no degradan.
-    d.data_freshness, stale = _freshness(obs, policy.max_staleness_days)
+    d.data_freshness, stale = _freshness(obs, policy)
 
     # Frescura de PRECIOS. Antes no se revisaba: __main__ tiraba los timestamps
     # de las velas y una serie congelada o cacheada era indistinguible de una

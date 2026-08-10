@@ -237,6 +237,46 @@ def test_datos_rancios_bloquean_antes_de_calcular_nada():
     assert d.allocation_mxn == {}
 
 
+def test_rancidez_respeta_el_calendario_de_cada_serie():
+    # El calendario NORMAL de publicación no es rancidez: la subasta de CETES
+    # es semanal (el dato vigente llega a 6 días cada lunes) y el INPC anual
+    # es mensual (40 días el 10 del mes siguiente). La primera corrida real
+    # (10-ago-2026) bloqueó con exactamente estas edades; era el límite el que
+    # estaba mal, no los datos.
+    o = obs()
+    for k in ("cetes_28", "cetes_91", "cetes_182", "cetes_364"):
+        o[k] = Observation(k, "TEST", o[k].value, date(2026, 8, 4), 6)
+    o["inpc_anual"] = Observation("inpc_anual", "TEST", 3.12, date(2026, 7, 1), 40)
+    d = decide(Policy(), o, _closes())
+    assert d.action != "BLOCKED_STALE_DATA"
+    assert d.hurdle  # se calculó, no se bloqueó
+
+
+def test_rancidez_real_sigue_bloqueando_serie_por_serie():
+    # Una subasta perdida (13+ días) y un mes de INPC perdido (100+) SÍ son
+    # rancidez con los límites por calendario. Regla 4 intacta.
+    o = obs()
+    o["cetes_364"] = Observation("cetes_364", "TEST", 7.01, date(2026, 7, 26), 15)
+    d = decide(Policy(), o, _closes())
+    assert d.action == "BLOCKED_STALE_DATA"
+    assert any("cetes_364" in b and "límite 9" in b for b in d.blockers)
+
+    o2 = obs()
+    o2["inpc_anual"] = Observation("inpc_anual", "TEST", 3.12, date(2026, 4, 1), 100)
+    d2 = decide(Policy(), o2, _closes())
+    assert d2.action == "BLOCKED_STALE_DATA"
+    assert any("inpc_anual" in b and "límite 75" in b for b in d2.blockers)
+
+
+def test_series_diarias_conservan_el_limite_estricto():
+    # El FIX es diario: 6 días de silencio es un problema real, no calendario.
+    o = obs()
+    o["fix_usdmxn"] = Observation("fix_usdmxn", "TEST", 17.1387, date(2026, 8, 4), 6)
+    d = decide(Policy(), o, _closes())
+    assert d.action == "BLOCKED_STALE_DATA"
+    assert any("fix_usdmxn" in b and "límite 5" in b for b in d.blockers)
+
+
 def test_hurdle_usa_el_plazo_que_calza_el_horizonte_y_lo_convierte():
     p = Policy(portfolio=Portfolio(total_capital_mxn=50_000, horizon_days=28))
     d = decide(p, obs(), _closes())
