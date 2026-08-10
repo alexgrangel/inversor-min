@@ -27,8 +27,10 @@ Por eso hay validación ESTRUCTURAL además del rango:
     equivocada (p.ej. "subyacente"). La aplica `python -m inversor
     verify-series`, que ahora falla con código != 0 si algo no corresponde.
   - validate_cetes_curve(): la curva debe ser monótona por plazo dentro de
-    una tolerancia. Un plazo intercambiado zigzaguea; una curva real no.
-    La aplica cetes_curve() en cada corrida.
+    una tolerancia, medida sobre todos los pares. Atrapa dislocaciones y
+    plazos intercambiados con diferencial ≥ tol; lo que la forma no puede
+    ver (etiquetas totalmente invertidas, intercambios con diferencial
+    < tol) lo atrapa el título. La aplica cetes_curve() en cada corrida.
 
 Contexto útil: en SIE conviven al menos tres familias de CETES. SF282/SF3338/
 SF3270/SF3367 son promedio mensual; SF43936 es la serie semanal del cuadro
@@ -55,7 +57,7 @@ SERIES: dict[str, str] = {
     "cetes_182": "SF60635",       # CETES 182d subasta semanal      [CONFIRMADO 10-ago-2026]
     "cetes_364": "SF60636",       # CETES 364d subasta semanal      [CONFIRMADO 10-ago-2026]
     "tasa_objetivo": "SF61745",   # Tasa objetivo Banxico           [CONFIRMADO 10-ago-2026]
-    "inpc_anual": "SP74665",      # INPC variación anual (general)  [CONFIRMADO 10-ago-2026]
+    "inpc_anual": "SP30578",      # INPC variación anual (general)  [CONFIRMADO 10-ago-2026]
     # inpc_anual fue SP74665 (inflación NO subyacente) hasta el 10-ago-2026.
     # Ver el docstring del módulo: publicaba 0.29% vs 3.12% de la general.
 }
@@ -85,10 +87,14 @@ SANITY: dict[str, tuple[float, float]] = {
 TITULO_DEBE_CONTENER: dict[str, tuple[str, ...]] = {
     "fix_usdmxn": ("tipo de cambio", "fix"),
     "udis": ("udis",),
-    "cetes_28": ("cetes a 28 días", "subasta", "tasa de rendimiento"),
-    "cetes_91": ("cetes a 91 días", "subasta", "tasa de rendimiento"),
-    "cetes_182": ("cetes a 182 días", "subasta", "tasa de rendimiento"),
-    "cetes_364": ("cetes a 364 días", "subasta", "tasa de rendimiento"),
+    # "fecha subasta" no es decorativo: distingue la familia SF606xx de la
+    # serie hermana del cuadro CF107 (misma subasta, fechada a colocación).
+    # La de colocación reporta as_of ~2 días más fresco de lo que el dato es,
+    # y eso debilita el bloqueo por rancidez (regla 4).
+    "cetes_28": ("cetes a 28 días", "subasta", "tasa de rendimiento", "fecha subasta"),
+    "cetes_91": ("cetes a 91 días", "subasta", "tasa de rendimiento", "fecha subasta"),
+    "cetes_182": ("cetes a 182 días", "subasta", "tasa de rendimiento", "fecha subasta"),
+    "cetes_364": ("cetes a 364 días", "subasta", "tasa de rendimiento", "fecha subasta"),
     "tasa_objetivo": ("tasa objetivo",),
     "inpc_anual": ("índice nacional de precios", "variación anual"),
 }
@@ -106,10 +112,13 @@ TITULO_NO_DEBE_CONTENER: dict[str, tuple[str, ...]] = {
 
 # Tolerancia de monotonía para la curva CETES, en puntos porcentuales.
 # Juicio sin calibrar contra histórico (mismo estatus que los umbrales de
-# signals.py): más grande que el ruido entre plazos contiguos de una subasta
-# normal (la del 4-ago-2026 fue 6.17/6.40/6.75/7.01: pasos de 23–35 pb),
-# más chica que el quiebre que produce un plazo intercambiado (≥58 pb en esa
-# misma curva). [CALIBRACIÓN PENDIENTE]
+# signals.py). La cantidad operativa al intercambiar dos plazos es su
+# DIFERENCIAL real, no los pasos amplificados de alrededor: en la curva del
+# 4-ago-2026 (6.17/6.40/6.75/7.01) los diferenciales contiguos son 23/35/26
+# pb, así que 0.35 atrapa el intercambio 91↔182 y deja pasar los de 23-26 pb
+# — limitación documentada en validate_cetes_curve; contra ésos está el
+# título. Más chica produciría falsos positivos con valles genuinos de ciclo
+# de recortes (~10-20 pb). [CALIBRACIÓN PENDIENTE]
 CURVA_TOLERANCIA_PP: float = 0.35
 
 
@@ -234,38 +243,57 @@ def validate_cetes_curve(
 ) -> None:
     """
     La curva debe ser monótona por plazo dentro de la tolerancia — creciente o
-    decreciente (invertida), ambas son formas reales. Lo que una curva real no
-    hace es zigzaguear ≥ tol entre plazos contiguos: eso es una serie de otra
-    familia, un plazo intercambiado o un dato dislocado, y bloquea duro
+    decreciente (invertida), ambas son formas reales. La prueba es
+    ε-monotonía sobre TODOS los pares, no sólo los contiguos: bajo la
+    hipótesis creciente, ningún plazo mayor puede pagar ≥ tol MENOS que
+    cualquier plazo menor (la peor caída acumulada); la decreciente es el
+    espejo con la peor subida. Comparar sólo pasos contiguos deja pasar dos
+    corrupciones reales: una dislocación repartida en pasos chicos, y un
+    colapso en un extremo que sólo viola en una dirección (p.ej. cetes_364
+    marcando 3.00 bajo una curva de 6.x "pasa" como decreciente si sólo se
+    acotan las subidas). Si ninguna hipótesis aguanta, bloquea duro
     (reglas 5 y 6).
 
-    Limitación conocida: una curva con TODAS las etiquetas invertidas es
-    monótona decreciente y pasa esta prueba — es indistinguible de una curva
-    genuinamente invertida. Contra eso está validate_series_title, que lee el
-    plazo del título oficial. Las dos validaciones son complementarias, no
-    redundantes.
+    Lo que la forma NO puede ver — y es imposible por construcción:
+      - todas las etiquetas invertidas: es una curva monótona decreciente
+        legítima, indistinguible de una inversión genuina;
+      - un intercambio de dos plazos cuyo diferencial real es < tol:
+        indistinguible de un valle/hump genuino de ese tamaño.
+    Contra ambos está validate_series_title, que lee el plazo del título
+    oficial. Las dos validaciones son complementarias, no redundantes.
+
+    Tampoco acota los pasos A FAVOR de la dirección: una curva que se empina
+    fuerte es forma válida, y ponerle tope sería otro umbral sin calibrar.
     """
     if len(curve_pp) < 2:
         return
     plazos = sorted(curve_pp)
-    # El redondeo mata el ruido de punto flotante en la frontera exacta:
-    # 6.40 - 6.75 da -0.34999999999999964, que sin redondear pasaría la
-    # desigualdad estricta contra -0.35.
-    difs = [
-        (a, b, round(curve_pp[b] - curve_pp[a], 9)) for a, b in zip(plazos, plazos[1:])
-    ]
-    # Desigualdad estricta a propósito: un paso contrario de exactamente tol
-    # ya cuenta como quiebre. Con pasos reales de 23-35 pb, ser laxo en la
-    # frontera dejaría pasar el intercambio de plazos contiguos.
-    creciente = all(d > -tol_pp for _, _, d in difs)
-    decreciente = all(d < tol_pp for _, _, d in difs)
+    vals = [curve_pp[p] for p in plazos]
+    # Peor caída (contra la hipótesis creciente) y peor subida (contra la
+    # decreciente) entre CUALQUIER par i<j, vía máximo/mínimo corrido. El
+    # redondeo mata el ruido de punto flotante en la frontera exacta:
+    # 6.75 - 6.40 da 0.34999999999999964, que sin redondear escaparía a la
+    # comparación estricta contra 0.35.
+    peor_caida, peor_subida = 0.0, 0.0
+    max_corrido, min_corrido = vals[0], vals[0]
+    for v in vals[1:]:
+        peor_caida = max(peor_caida, round(max_corrido - v, 9))
+        peor_subida = max(peor_subida, round(v - min_corrido, 9))
+        max_corrido = max(max_corrido, v)
+        min_corrido = min(min_corrido, v)
+    # Desigualdad estricta a propósito: una violación de exactamente tol ya
+    # cuenta como quiebre. Con diferenciales reales de 23-35 pb, ser laxo en
+    # la frontera dejaría pasar el intercambio de plazos contiguos.
+    creciente = peor_caida < tol_pp
+    decreciente = peor_subida < tol_pp
     if creciente or decreciente:
         return
-    detalle = ", ".join(f"{a}d→{b}d {d:+.2f} pp" for a, b, d in difs)
+    detalle = ", ".join(f"{p}d {curve_pp[p]:.2f}" for p in plazos)
     raise BanxicoError(
-        f"Curva CETES no monótona (tolerancia {tol_pp} pp): {detalle}."
-        " Casi seguro un ID de serie está mal o un dato viene dislocado."
-        " Corre verify-series."
+        f"Curva CETES no monótona dentro de {tol_pp} pp ({detalle}): peor caída"
+        f" {peor_caida:.2f} pp y peor subida {peor_subida:.2f} pp entre pares —"
+        " ninguna hipótesis (creciente/decreciente) aguanta. Casi seguro un ID"
+        " de serie está mal o un dato viene dislocado. Corre verify-series."
     )
 
 

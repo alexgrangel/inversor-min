@@ -205,8 +205,10 @@ def cmd_verify(_: argparse.Namespace) -> int:
 
     Ya no es sólo informativo: valida el título oficial contra
     TITULO_DEBE_CONTENER / TITULO_NO_DEBE_CONTENER y sale con código != 0 si
-    algo no corresponde, para que un ID equivocado truene en CI en vez de
-    depender de que un humano lea la lista con atención.
+    algo no corresponde, en vez de depender de que un humano lea la lista con
+    atención. Hoy se corre a mano; cablearlo como paso de daily.yml está
+    pendiente (Prompt 4). La defensa offline contra un revert accidental de
+    los IDs es el pin de regresión en tests/test_banxico.py.
     """
     token = bx.get_token()
     ok = True
