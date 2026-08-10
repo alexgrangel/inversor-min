@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "kind": "estado",
+    "maquina": "HURDLE_MOVED",
+    "ref": 0.10843,
+    "armed": true,
+    "at": "2026-08-10T20:43:23.136768+00:00"
+  }
+]
