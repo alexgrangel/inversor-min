@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema de plataforma. El color real lo pone Compose (ui/theme/Theme.kt).
+         Se usa el tema del sistema para no arrastrar la dependencia de Material
+         Components: esta app sólo necesita una ventana sin ActionBar. -->
+    <style name="Theme.InversorMin" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>

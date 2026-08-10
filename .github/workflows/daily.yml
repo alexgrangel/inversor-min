@@ -1,0 +1,64 @@
+name: decision-diaria
+
+# El cron de GitHub Actions es la infraestructura completa de este sistema:
+# cómputo gratis, secreto gestionado, y —lo más importante— cada corrida queda
+# committeada con timestamp inmutable. Ese historial ES el log walk-forward.
+# Sin él, en seis meses no puedes distinguir entre que el sistema funcionó y
+# que te acuerdas de que funcionó.
+
+on:
+  schedule:
+    - cron: "0 20 * * 1-5"   # 14:00 CDMX (UTC-6), después del FIX de Banxico (~12:30)
+  workflow_dispatch:
+    inputs:
+      held_mxn:
+        description: "Sleeve cripto actual en MXN"
+        default: "0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: decision-diaria
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tests (fallar aquí es preferible a publicar una decisión mala)
+        working-directory: engine
+        run: |
+          pip install -q pytest
+          python -m pytest -q
+
+      - name: Generar decisión
+        working-directory: engine
+        env:
+          BANXICO_TOKEN: ${{ secrets.BANXICO_TOKEN }}
+        run: |
+          python -m inversor run \
+            --capital "${{ vars.CAPITAL_MXN || '50000' }}" \
+            --reserve "${{ vars.RESERVE_MXN || '5000' }}" \
+            --horizon "${{ vars.HORIZON_DAYS || '364' }}" \
+            --isr "${{ vars.ISR_MARGINAL || '0.30' }}" \
+            --held "${{ github.event.inputs.held_mxn || vars.HELD_MXN || '0' }}" \
+            --fees-ytd "${{ vars.FEES_YTD_MXN || '0' }}" \
+            --out ../snapshots
+
+      - name: Commit del snapshot
+        run: |
+          git config user.name  "inversor-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add snapshots/
+          git diff --staged --quiet || git commit -m "decisión $(date -u +%F)"
+          git push
+
+      - name: Resumen en el job
+        run: cat snapshots/latest.md >> "$GITHUB_STEP_SUMMARY"

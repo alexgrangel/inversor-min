@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Inversor</string>
+
+    <!-- Navegación -->
+    <string name="tab_today">Hoy</string>
+    <string name="tab_why">Por qué</string>
+    <string name="tab_history">Historial</string>
+    <string name="cd_refresh">Actualizar</string>
+
+    <!-- Acciones del motor -->
+    <string name="action_stay_in_cetes">QUEDARSE EN CETES</string>
+    <string name="action_allocate_to_crypto">AUMENTAR SLEEVE CRIPTO</string>
+    <string name="action_reduce_crypto">REDUCIR SLEEVE CRIPTO</string>
+    <string name="action_hold_no_action">SIN ACCIÓN</string>
+    <string name="action_blocked_fee_budget">BLOQUEADO: PRESUPUESTO DE COMISIONES</string>
+    <string name="action_blocked_stale_data">BLOQUEADO: DATOS RANCIOS</string>
+    <string name="action_blocked_below_min_notional">BLOQUEADO: BAJO EL MÍNIMO OPERABLE</string>
+
+    <!-- Estados de carga y error -->
+    <string name="loading">Cargando…</string>
+    <string name="retry">Reintentar</string>
+    <string name="empty_no_data">Todavía no hay datos. Conéctate para descargar el último snapshot.</string>
+    <string name="error_network">No se pudo contactar a GitHub. Revisa tu conexión.</string>
+    <string name="error_parse">El snapshot no se pudo leer. El formato no coincide con el que espera esta versión de la app.</string>
+
+    <!-- Banners: la frescura del dato es un estado de primera clase -->
+    <string name="banner_cache_title">Datos guardados del %1$s</string>
+    <string name="banner_cache_updating">Buscando una versión más reciente…</string>
+    <string name="banner_cache_offline">No se pudo actualizar. Estos números son de la última descarga, no de hoy.</string>
+    <string name="banner_stale_title">DATOS RANCIOS</string>
+    <string name="banner_stale_age">El snapshot tiene %1$d días de antigüedad (límite %2$d).</string>
+    <string name="banner_stale_age_unknown">No se pudo determinar la antigüedad del snapshot.</string>
+    <string name="banner_stale_series">Series marcadas como rancias: %1$s</string>
+    <string name="banner_stale_footer">No tomes decisiones con estos números como si fueran de hoy.</string>
+
+    <!-- Pantalla de esquema incompatible -->
+    <string name="update_title">Actualiza la app</string>
+    <string name="update_body">El motor está publicando el esquema %1$s y esta app fue construida para el esquema mayor %2$d. Mostrar sólo una parte sería peor que no mostrar nada.</string>
+    <string name="update_how">Actualiza el APK desde el repositorio y vuelve a instalarlo.</string>
+
+    <!-- Pantalla 1: Hoy -->
+    <string name="today_generated_at">Generado: %1$s</string>
+    <string name="today_schema">Esquema %1$s</string>
+    <string name="today_blockers_title">Bloqueos</string>
+
+    <string name="card_allocation_title">Asignación objetivo</string>
+    <string name="col_instrument">Instrumento</string>
+    <string name="col_mxn">MXN</string>
+    <string name="row_total">Total</string>
+
+    <string name="card_materiality_title">¿Mueve la aguja?</string>
+    <string name="materiality_weight">Sleeve sobre el capital total</string>
+    <string name="materiality_verdict">Veredicto</string>
+    <string name="col_if_crypto">Si cripto hace…</string>
+    <string name="col_impact_pct">Impacto</string>
+    <string name="col_impact_mxn">En pesos</string>
+    <string name="materiality_cetes_label">Contra eso, CETES te paga al año, neto y sin volatilidad</string>
+    <string name="materiality_inmaterial_title">Esta posición no mueve la aguja</string>
+    <string name="materiality_inmaterial_body">Aun si cripto hace %1$s, el efecto sobre tu portafolio total es %2$s, o sea %3$s. Es ruido: trabajo operativo y fiscal para no cambiar nada.</string>
+    <string name="materiality_inmaterial_action">Considera no tener la posición y quedarte en CETES.</string>
+    <string name="materiality_cetes_dominant">CETES te paga esto al año, neto y sin volatilidad</string>
+    <string name="materiality_sleeve_is">El sleeve cripto es %1$s de tu capital total (%2$s).</string>
+
+    <string name="card_hurdle_title">Costo de oportunidad</string>
+    <string name="hurdle_cetes_nominal">CETES a %1$d días, nominal</string>
+    <string name="hurdle_inflation">Inflación anual</string>
+    <string name="hurdle_real_pretax">Interés real por Fisher, antes de ISR</string>
+    <string name="hurdle_base_gravable">Base gravable LISR art. 134 (resta nominal menos inflación)</string>
+    <string name="hurdle_isr">ISR sobre la base gravable</string>
+    <string name="hurdle_net_nominal">CETES neto nominal</string>
+    <string name="hurdle_net_real">CETES neto real</string>
+    <string name="hurdle_risk_premium">Prima de riesgo exigida</string>
+    <string name="hurdle_two_rates_title">Las dos tasas no son intercambiables</string>
+    <string name="hurdle_anualizado">Hurdle anualizado (tasa por año)</string>
+    <string name="hurdle_periodo">Hurdle en tu horizonte (%1$d días)</string>
+    <string name="hurdle_two_rates_caption">La tasa anualizada NO es lo que tienes que ganar en el periodo. Para decidir, compara contra la de tu horizonte.</string>
+    <string name="hurdle_assumptions">Supuestos</string>
+
+    <string name="card_fees_title">Presupuesto de comisiones</string>
+    <string name="fees_max_round_trips">Operaciones completas permitidas al año</string>
+    <string name="fees_remaining">Operaciones restantes</string>
+    <string name="fees_breakeven">Movimiento mínimo para no perder por comisiones</string>
+    <string name="fees_exhausted">Presupuesto agotado. Operar ahora convierte el rendimiento esperado en comisión pagada.</string>
+    <string name="fees_min_notional">Mínimo operable</string>
+    <string name="required_title">Rendimiento en pesos que tiene que dar el sleeve</string>
+    <string name="required_periodo">En tu horizonte (%1$d días)</string>
+    <string name="required_anualizado">Anualizado (tasa por año)</string>
+
+    <string name="disclaimer">Uso personal. No es asesoría en inversiones.</string>
+    <string name="disclaimer_engine">Este sistema no pronostica precios. Dimensiona riesgo, impone un techo de comisiones y compara contra CETES neto de impuestos.</string>
+
+    <!-- Pantalla 2: Por qué -->
+    <string name="why_reasons_title">Razonamiento</string>
+    <string name="why_warnings_title">Advertencias</string>
+    <string name="why_blockers_title">Bloqueos</string>
+    <string name="why_empty_section">Sin elementos.</string>
+    <string name="why_fx_title">Sensibilidad al tipo de cambio</string>
+    <string name="why_fx_rate">USD/MXN fix</string>
+    <string name="col_fx_scenario">Movimiento MXN</string>
+    <string name="col_fx_required">Rendimiento USD requerido</string>
+    <string name="why_fx_caption">El cálculo es multiplicativo, no una resta. Si el peso se aprecia, el rendimiento que necesitas en dólares sube más que proporcionalmente: esos son los números grandes de la tabla y se muestran completos.</string>
+
+    <!-- Pantalla 3: Historial -->
+    <string name="history_title">Bitácora walk-forward</string>
+    <string name="history_subtitle">Cada corrida queda registrada con fecha. Es la única forma de contestar después la pregunta que importa: ¿esto le ganó a CETES fuera de muestra?</string>
+    <string name="history_count">%1$d días registrados</string>
+    <string name="history_empty">No se encontraron snapshots fechados en el repositorio.</string>
+    <string name="history_error">No se pudo leer el índice de snapshots desde GitHub.</string>
+    <string name="history_day_error">No se pudo cargar ese día.</string>
+    <string name="history_tap_hint">Toca un día para ver la decisión de esa fecha.</string>
+    <string name="history_detail_generated">Generado %1$s</string>
+    <string name="history_detail_sleeve">Sleeve objetivo</string>
+    <string name="history_detail_hurdle">Hurdle anualizado</string>
+    <string name="history_detail_cetes">CETES al año</string>
+</resources>
