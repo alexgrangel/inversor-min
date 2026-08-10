@@ -1,0 +1,335 @@
+{
+  "schema_version": "3.0.0",
+  "generated_at": "2026-08-10T17:00:53.602154+00:00",
+  "action": "ALLOCATE_TO_CRYPTO",
+  "headline": "Aumentar sleeve cripto en 1,440 MXN (objetivo 1,440 MXN, 3.2% del invertible). Costo estimado 2 MXN.",
+  "reasons": [
+    "Hurdle: CETES 364d al 7.01% nominal → 5.84% neto de ISR (2.64% real). Más prima de riesgo de 5.00% = 10.84% anualizado, equivalente a 10.81% en 364 días.",
+    "Vol realizada anualizada: 31.3%.",
+    "Restricción vol-target (8.0% objetivo): 25.6%.",
+    "Restricción presupuesto de caída (8.0% tolerable / 75% caída supuesta del activo): 10.7%.",
+    "Tope duro: 20.0%.",
+    "Restricción que manda: regime_multiplier(0.30).",
+    "Escalado por régimen: x0.30.",
+    "Costo por round-trip: 0.300% del monto rotado (0.100% comisión + 0.050% slippage, x2 lados).",
+    "Presupuesto anual: 7 MXN (0.50% del sleeve de 1,440 MXN).",
+    "Operaciones completas permitidas al año: 1.7.",
+    "Un movimiento de precio menor al breakeven deja la operación en pérdida incluso si la dirección fue correcta.",
+    "Para que el sleeve cripto haya valido la pena frente a CETES, tiene que rendir al menos 11.11% EN PESOS en 364 días. Ese rendimiento en pesos es rendimiento en dólares MÁS movimiento del tipo de cambio.",
+    "Ganancia esperada (156 MXN) por debajo de la exención anual restante (128,384 MXN). ISR efectivo 0%. SUPUESTO NO CONFIRMADO: exención 3xUMA aplicable a activos virtuales."
+  ],
+  "blockers": [],
+  "warnings": [
+    "Sleeve de 1,440 MXN: aun con cripto +50%, el impacto en el portafolio total es +1.44%. Es ruido. Considera no tener la posición y ahorrarte el trabajo operativo y fiscal.",
+    "Tienes ingresos y gastos en MXN. Una posición cripto es una posición larga en USD sin cobertura. A tu tamaño de cuenta, la volatilidad del tipo de cambio es comparable al alfa que puedes esperar."
+  ],
+  "market": {
+    "usdmxn_fix": 17.1387,
+    "usdmxn_fix_as_of": "2026-08-07",
+    "inflacion_anual": 0.031200000000000002,
+    "tasa_objetivo": 0.065,
+    "cetes_curve": {
+      "28": 0.0617,
+      "91": 0.064,
+      "182": 0.0675,
+      "364": 0.0701
+    },
+    "venues": {
+      "BTC": "kraken",
+      "ETH": "kraken"
+    }
+  },
+  "hurdle": {
+    "tenor_days": 364,
+    "horizon_days": 364,
+    "cetes_nominal": 0.0701,
+    "inflacion": 0.031200000000000002,
+    "cetes_real_pretax": 0.037723041117145195,
+    "base_gravable_lisr134": 0.03889999999999999,
+    "isr_sobre_interes_real": 0.011669999999999996,
+    "cetes_neto_nominal": 0.058429999999999996,
+    "cetes_neto_real": 0.02640612878200166,
+    "prima_de_riesgo_exigida": 0.05,
+    "hurdle_total_anualizado": 0.10843,
+    "hurdle_total_periodo": 0.10811742248552014,
+    "assumptions": [
+      "ISR marginal supuesto: 30% (confirmar con contador)",
+      "Base gravable = interés nominal − inflación (resta, LISR art. 134), no la relación de Fisher",
+      "Retención provisional 0.90% sobre el capital (LIF 2026 art. 24; subió desde 0.50% en 2025). Es acreditable en la anual, por eso no se resta del rendimiento devengado."
+    ]
+  },
+  "sizing": {
+    "weight": 0.032,
+    "weight_mxn": 1440.0,
+    "binding_constraint": "regime_multiplier(0.30)",
+    "vol_target_weight": 0.25579208841352535,
+    "drawdown_budget_weight": 0.10666666666666667,
+    "hard_cap_weight": 0.2,
+    "realized_vol_annual": 0.3127540046143581,
+    "implied_portfolio_vol": 0.010008128147659459,
+    "implied_worst_case_loss_mxn": 1080.0,
+    "notes": [
+      "Vol realizada anualizada: 31.3%.",
+      "Restricción vol-target (8.0% objetivo): 25.6%.",
+      "Restricción presupuesto de caída (8.0% tolerable / 75% caída supuesta del activo): 10.7%.",
+      "Tope duro: 20.0%.",
+      "Restricción que manda: regime_multiplier(0.30).",
+      "Escalado por régimen: x0.30."
+    ],
+    "regime_multiplier": 0.3,
+    "regimes": [
+      {
+        "label": "RISK_OFF",
+        "size_multiplier": 0.3,
+        "price": 63845.8,
+        "sma_200": 70003.4455,
+        "sma_50": 63325.725999999995,
+        "pct_from_200": -0.08796203466870778,
+        "drawdown_from_1y_high": -0.4882777027487346,
+        "vol_30d": 0.28399920813514057,
+        "vol_percentile_2y": 0.18085106382978725,
+        "signals": [
+          "Precio abajo de la SMA200 (-8.8%).",
+          "SMA50 abajo de SMA200.",
+          "Caída desde el máximo de 12 meses: -48.8%.",
+          "Vol 30d anualizada: 28.4% (percentil 18% de 2 años).",
+          "Caída > 35% y precio bajo SMA200: tamaño limitado a 30%.",
+          "Régimen RISK_OFF: multiplicador de tamaño 0.30."
+        ]
+      },
+      {
+        "label": "RISK_OFF",
+        "size_multiplier": 0.3,
+        "price": 1870.52,
+        "sma_200": 2044.80725,
+        "sma_50": 1805.1454,
+        "pct_from_200": -0.08523407279585893,
+        "drawdown_from_1y_high": -0.612728778467909,
+        "vol_30d": 0.3990183940520106,
+        "vol_percentile_2y": 0.06382978723404255,
+        "signals": [
+          "Precio abajo de la SMA200 (-8.5%).",
+          "SMA50 abajo de SMA200.",
+          "Caída desde el máximo de 12 meses: -61.3%.",
+          "Vol 30d anualizada: 39.9% (percentil 6% de 2 años).",
+          "Caída > 35% y precio bajo SMA200: tamaño limitado a 30%.",
+          "Régimen RISK_OFF: multiplicador de tamaño 0.30."
+        ]
+      }
+    ],
+    "materiality": {
+      "peso_sobre_capital_total": 0.0288,
+      "escenarios": [
+        {
+          "movimiento_cripto": -0.5,
+          "impacto_portafolio_pct": -0.0144,
+          "impacto_portafolio_mxn": -720.0
+        },
+        {
+          "movimiento_cripto": -0.25,
+          "impacto_portafolio_pct": -0.0072,
+          "impacto_portafolio_mxn": -360.0
+        },
+        {
+          "movimiento_cripto": 0.25,
+          "impacto_portafolio_pct": 0.0072,
+          "impacto_portafolio_mxn": 360.0
+        },
+        {
+          "movimiento_cripto": 0.5,
+          "impacto_portafolio_pct": 0.0144,
+          "impacto_portafolio_mxn": 720.0
+        },
+        {
+          "movimiento_cripto": 1.0,
+          "impacto_portafolio_pct": 0.0288,
+          "impacto_portafolio_mxn": 1440.0
+        }
+      ],
+      "cetes_anual_mxn": 2545.2108,
+      "veredicto": "INMATERIAL"
+    }
+  },
+  "costs": {
+    "capital_mxn": 50000.0,
+    "annual_budget_mxn": 7.2,
+    "cost_per_round_trip_pct": 0.003,
+    "cost_per_round_trip_mxn": 4.32,
+    "max_round_trips_per_year": 1.6666666666666665,
+    "round_trips_remaining": 1.6666666666666665,
+    "fees_spent_ytd_mxn": 0.0,
+    "budget_exhausted": false,
+    "breakeven_move_pct": 0.003,
+    "notes": [
+      "Costo por round-trip: 0.300% del monto rotado (0.100% comisión + 0.050% slippage, x2 lados).",
+      "Presupuesto anual: 7 MXN (0.50% del sleeve de 1,440 MXN).",
+      "Operaciones completas permitidas al año: 1.7.",
+      "Un movimiento de precio menor al breakeven deja la operación en pérdida incluso si la dirección fue correcta."
+    ],
+    "min_notional_check": "Pata más chica: 21.01 USD vs mínimo 10.00 USD (OK)."
+  },
+  "allocation_mxn": {
+    "reserva_liquidez": 5000.0,
+    "BTC": 1080.0,
+    "ETH": 360.0,
+    "CETES_364d": 43560.0
+  },
+  "required_returns": {
+    "hurdle_periodo": 0.10811742248552014,
+    "hurdle_anualizado": 0.10843,
+    "horizon_days": 364,
+    "fee_drag_round_trip": 0.003,
+    "isr_efectivo_cripto": 0.0,
+    "isr_nota": "Ganancia esperada (156 MXN) por debajo de la exención anual restante (128,384 MXN). ISR efectivo 0%. SUPUESTO NO CONFIRMADO: exención 3xUMA aplicable a activos virtuales.",
+    "rendimiento_mxn_requerido_periodo": 0.11111742248552015,
+    "rendimiento_mxn_requerido_anualizado": 0.11143910150258418,
+    "explicacion": "Para que el sleeve cripto haya valido la pena frente a CETES, tiene que rendir al menos 11.11% EN PESOS en 364 días. Ese rendimiento en pesos es rendimiento en dólares MÁS movimiento del tipo de cambio."
+  },
+  "fx": {
+    "usdmxn_fix": 17.1387,
+    "sensibilidad": [
+      {
+        "escenario_mxn": -0.1,
+        "rendimiento_usd_requerido": 0.23457491387279994,
+        "nota": "Si el peso se aprecia 10%, cripto necesita 23.46% en USD sólo para empatar a CETES."
+      },
+      {
+        "escenario_mxn": -0.05,
+        "rendimiento_usd_requerido": 0.16959728682686315,
+        "nota": "Si el peso se aprecia 5%, cripto necesita 16.96% en USD sólo para empatar a CETES."
+      },
+      {
+        "escenario_mxn": 0.0,
+        "rendimiento_usd_requerido": 0.11111742248552003,
+        "nota": "Si el peso se deprecia 0%, el requerido en USD baja a 11.11%."
+      },
+      {
+        "escenario_mxn": 0.05,
+        "rendimiento_usd_requerido": 0.05820706903382855,
+        "nota": "Si el peso se deprecia 5%, el requerido en USD baja a 5.82%."
+      },
+      {
+        "escenario_mxn": 0.1,
+        "rendimiento_usd_requerido": 0.010106747714109021,
+        "nota": "Si el peso se deprecia 10%, el requerido en USD baja a 1.01%."
+      }
+    ],
+    "advertencia": "Tienes ingresos y gastos en MXN. Una posición cripto es una posición larga en USD sin cobertura. A tu tamaño de cuenta, la volatilidad del tipo de cambio es comparable al alfa que puedes esperar."
+  },
+  "data_freshness": {
+    "fix_usdmxn": {
+      "series_id": "SF43718",
+      "value": 17.1387,
+      "as_of": "2026-08-07",
+      "stale_days": 3,
+      "stale": false
+    },
+    "cetes_28": {
+      "series_id": "SF60633",
+      "value": 6.17,
+      "as_of": "2026-08-04",
+      "stale_days": 6,
+      "stale": false
+    },
+    "cetes_91": {
+      "series_id": "SF60634",
+      "value": 6.4,
+      "as_of": "2026-08-04",
+      "stale_days": 6,
+      "stale": false
+    },
+    "cetes_182": {
+      "series_id": "SF60635",
+      "value": 6.75,
+      "as_of": "2026-08-04",
+      "stale_days": 6,
+      "stale": false
+    },
+    "cetes_364": {
+      "series_id": "SF60636",
+      "value": 7.01,
+      "as_of": "2026-08-04",
+      "stale_days": 6,
+      "stale": false
+    },
+    "tasa_objetivo": {
+      "series_id": "SF61745",
+      "value": 6.5,
+      "as_of": "2026-08-10",
+      "stale_days": 0,
+      "stale": false
+    },
+    "inpc_anual": {
+      "series_id": "SP30578",
+      "value": 3.12,
+      "as_of": "2026-07-01",
+      "stale_days": 40,
+      "stale": false
+    },
+    "precio_BTC": {
+      "series_id": "kraken:BTC",
+      "value": 63845.8,
+      "as_of": "2026-08-10",
+      "stale_days": 0,
+      "stale": false
+    },
+    "precio_ETH": {
+      "series_id": "kraken:ETH",
+      "value": 1870.52,
+      "as_of": "2026-08-10",
+      "stale_days": 0,
+      "stale": false
+    }
+  },
+  "policy": {
+    "portfolio": {
+      "total_capital_mxn": 50000.0,
+      "horizon_days": 364,
+      "liquidity_reserve_mxn": 5000.0
+    },
+    "tax": {
+      "marginal_isr_rate": 0.3,
+      "retencion_provisional_anual": 0.009,
+      "exencion_anual_bienes_muebles_mxn": 128383.92,
+      "ganancias_cripto_ytd_mxn": 0.0
+    },
+    "risk": {
+      "max_portfolio_drawdown_from_crypto": 0.08,
+      "assumed_crypto_max_drawdown": 0.75,
+      "crypto_vol_target": 0.08,
+      "max_crypto_weight": 0.2,
+      "min_crypto_weight": 0.03
+    },
+    "cost": {
+      "annual_fee_budget_pct": 0.005,
+      "taker_fee_pct": 0.001,
+      "slippage_pct": 0.0005,
+      "min_notional_usd": 10.0,
+      "fees_spent_ytd_mxn": 0.0
+    },
+    "universe": {
+      "crypto_symbols": [
+        "BTC",
+        "ETH"
+      ],
+      "crypto_weights": [
+        0.75,
+        0.25
+      ],
+      "venue_order": [
+        "kraken",
+        "coinbase",
+        "binance"
+      ]
+    },
+    "required_risk_premium": 0.05,
+    "max_staleness_days": 5,
+    "staleness_days_by_key": {
+      "cetes_28": 9,
+      "cetes_91": 9,
+      "cetes_182": 9,
+      "cetes_364": 9,
+      "inpc_anual": 75
+    }
+  }
+}
