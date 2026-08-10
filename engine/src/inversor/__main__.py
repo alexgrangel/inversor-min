@@ -200,20 +200,36 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(_: argparse.Namespace) -> int:
-    """Confirma que cada ID de serie devuelve lo que creemos que devuelve."""
+    """
+    Confirma que cada ID de serie devuelve lo que creemos que devuelve.
+
+    Ya no es sólo informativo: valida el título oficial contra
+    TITULO_DEBE_CONTENER / TITULO_NO_DEBE_CONTENER y sale con código != 0 si
+    algo no corresponde, para que un ID equivocado truene en CI en vez de
+    depender de que un humano lea la lista con atención.
+    """
     token = bx.get_token()
     ok = True
     for key, sid in bx.SERIES.items():
         try:
             payload = bx._request(f"/series/{sid}", token)
             title = payload["bmx"]["series"][0].get("titulo", "?")
-            lo, hi = bx.SANITY[key]
-            print(f"  {key:16s} {sid:10s} → {title}")
-            print(f"  {'':16s} {'':10s}   rango esperado [{lo}, {hi}]")
         except Exception as e:  # noqa: BLE001
             ok = False
-            print(f"  {key:16s} {sid:10s} → ERROR: {e}")
-    print("\nConfirma que cada título corresponde. Si no, corrige SERIES en sources/banxico.py.")
+            print(f"  ✗ {key:16s} {sid:10s} → ERROR: {e}")
+            continue
+        problemas = bx.validate_series_title(key, title)
+        lo, hi = bx.SANITY[key]
+        marca = "✓" if not problemas else "✗"
+        print(f"  {marca} {key:16s} {sid:10s} → {title}")
+        print(f"  {'':18s} {'':10s}   rango esperado [{lo}, {hi}]")
+        for p in problemas:
+            ok = False
+            print(f"  {'':18s} {'':10s}   ⚠ {p}")
+    if ok:
+        print("\nTodos los títulos son consistentes con lo que cada llave dice ser.")
+    else:
+        print("\nHay series que NO corresponden. Corrige SERIES en sources/banxico.py.")
     return 0 if ok else 1
 
 
