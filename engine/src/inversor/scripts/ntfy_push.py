@@ -22,11 +22,25 @@ import base64
 import json
 import os
 import sys
+import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..notify import Notification
 from ..notify_sinks import render_ntfy
+
+# Un notifications-latest.json más viejo que esto no se entrega: si el engine
+# hubiera corrido hoy, el archivo sería de hoy. Entregar uno rancio significa
+# re-mandar los avisos de una corrida anterior (fue un bug real: el job podía
+# quedar verde sin correr el engine y este paso re-posteaba lo de ayer).
+MAX_EDAD_HORAS = 24.0
+
+# Backoff antes del 2º y 3er intento de POST. Un aviso ya committeado que no
+# llega al teléfono no se puede re-entregar después (el re-run del job no
+# re-evalúa), así que los reintentos aquí son la única defensa contra un
+# timeout transitorio de ntfy.sh.
+REINTENTOS_BACKOFF_S: tuple[float, ...] = (2.0, 5.0)
 
 
 def encode_header(valor: str) -> str:
@@ -60,6 +74,27 @@ def _post(payload: dict) -> int:
         return r.status
 
 
+def entregar(payload: dict) -> int:
+    """_post con reintentos. Devuelve el status HTTP del intento que pegó."""
+    for i, espera in enumerate((*REINTENTOS_BACKOFF_S, None)):
+        try:
+            return _post(payload)
+        except Exception:  # noqa: BLE001
+            if espera is None:
+                raise
+            time.sleep(espera)
+    raise AssertionError("inalcanzable")
+
+
+def es_rancio(generated_at: str | None, ahora: datetime | None = None) -> float | None:
+    """Horas de antigüedad si excede MAX_EDAD_HORAS; None si está fresco."""
+    if not generated_at:
+        return None
+    ahora = ahora or datetime.now(timezone.utc)
+    edad_h = (ahora - datetime.fromisoformat(generated_at)).total_seconds() / 3600.0
+    return edad_h if edad_h > MAX_EDAD_HORAS else None
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print("uso: python -m inversor.scripts.ntfy_push <notifications-latest.json>")
@@ -74,7 +109,16 @@ def main(argv: list[str]) -> int:
         # avisos: no hay archivo, no hay nada que entregar.
         print(f"[ntfy] {ruta} no existe; nada que entregar.")
         return 0
-    ns = rehidratar(json.loads(ruta.read_text(encoding="utf-8")))
+    data = json.loads(ruta.read_text(encoding="utf-8"))
+    edad = es_rancio(data.get("generated_at"))
+    if edad is not None:
+        print(
+            f"[ntfy] {ruta.name} es de hace {edad:.0f} horas: no se re-entrega una"
+            " corrida anterior. ¿El engine corrió de verdad hoy?",
+            file=sys.stderr,
+        )
+        return 1
+    ns = rehidratar(data)
     if not ns:
         print("[ntfy] 0 avisos; el silencio no se entrega.")
         return 0
@@ -83,7 +127,7 @@ def main(argv: list[str]) -> int:
     for n in ns:
         p = render_ntfy(n, topic)
         try:
-            status = _post(p)
+            status = entregar(p)
             print(f"[ntfy] {n.trigger} [{n.priority}] → HTTP {status}")
         except Exception as e:  # noqa: BLE001 — un aviso caído no debe callar al resto
             fallos += 1

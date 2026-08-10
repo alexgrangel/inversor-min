@@ -37,6 +37,13 @@ BANXICO_KEYS = [
 NOTIFY_HISTORY = "notifications.json"
 NOTIFY_LATEST = "notifications-latest.json"
 
+# Código de salida para decisión BLOQUEADA. 42 y no 2 a propósito: argparse
+# sale con 2 en errores de uso (un --capital "50,000" con coma, por ejemplo),
+# y el workflow necesita distinguir "decisión bloqueada: publícala" de "el CLI
+# ni siquiera llegó a correr". Con ambos en 2, un typo en las vars del repo
+# dejaba el job verde sin correr el engine.
+EXIT_BLOCKED = 42
+
 
 def _load_previous_decision(out_dir: Path, current: Decision) -> Decision | None:
     """
@@ -196,7 +203,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             d, out, previous, persistir=not (args.dry_run or args.notify_dry_run)
         )
 
-    return 0 if not d.blockers else 2
+    return 0 if not d.blockers else EXIT_BLOCKED
 
 
 def cmd_verify(_: argparse.Namespace) -> int:

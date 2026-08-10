@@ -113,23 +113,98 @@ def test_entrega_postea_una_vez_por_aviso_al_topic(tmp_path, monkeypatch):
     assert all(p["url"] == "https://ntfy.sh/topic-secreto" for p in mandados)
 
 
-def test_un_post_caido_no_calla_al_resto_y_sale_distinto_de_cero(tmp_path, monkeypatch):
+def test_un_aviso_caido_tras_reintentos_no_calla_al_resto(tmp_path, monkeypatch):
+    # Se parcha `entregar` (no `_post`): un fallo transitorio de _post lo
+    # salvan los reintentos; lo que este test pinnea es que un aviso caído
+    # DEFINITIVAMENTE no impide intentar los siguientes, y el exit es 1.
     monkeypatch.setenv("NTFY_TOPIC", "t")
-    intentos: list[str] = []
+    entregados: list[str] = []
 
-    def post_a_veces(p):
-        intentos.append(p["headers"]["Title"])
-        if len(intentos) == 1:
-            raise OSError("timeout")
+    def entregar_a_veces(p):
+        entregados.append(p["headers"]["Title"])
+        if len(entregados) == 1:
+            raise OSError("caído tras agotar reintentos")
         return 200
 
-    monkeypatch.setattr(ntfy_push, "_post", post_a_veces)
+    monkeypatch.setattr(ntfy_push, "entregar", entregar_a_veces)
     f = tmp_path / "notifications-latest.json"
     f.write_text(json.dumps({"notifications": [_aviso(), _aviso()]}))
     assert ntfy_push.main(["ntfy_push", str(f)]) == 1
-    assert len(intentos) == 2  # el segundo sí se intentó
+    assert len(entregados) == 2  # el segundo sí se intentó
 
 
 def test_archivo_inexistente_es_benigno(monkeypatch):
     monkeypatch.setenv("NTFY_TOPIC", "t")
     assert ntfy_push.main(["ntfy_push", "/no/existe.json"]) == 0
+
+
+def test_un_archivo_rancio_no_se_reentrega(tmp_path, monkeypatch):
+    # El bug que motivó esto: un job verde sin correr el engine dejaba el
+    # notifications-latest.json de la corrida ANTERIOR en el árbol, y el paso
+    # de ntfy re-posteaba los avisos de ayer. Un archivo de >24h no se entrega
+    # y el paso sale rojo para que se investigue.
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setenv("NTFY_TOPIC", "t")
+    monkeypatch.setattr(
+        ntfy_push, "_post", lambda p: (_ for _ in ()).throw(AssertionError("no debió mandar"))
+    )
+    ayer = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
+    f = tmp_path / "notifications-latest.json"
+    f.write_text(json.dumps({"generated_at": ayer, "notifications": [_aviso()]}))
+    assert ntfy_push.main(["ntfy_push", str(f)]) == 1
+
+
+def test_un_archivo_fresco_si_se_entrega(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+
+    monkeypatch.setenv("NTFY_TOPIC", "t")
+    mandados: list[dict] = []
+    monkeypatch.setattr(ntfy_push, "_post", lambda p: mandados.append(p) or 200)
+    f = tmp_path / "notifications-latest.json"
+    f.write_text(
+        json.dumps(
+            {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "notifications": [_aviso()],
+            }
+        )
+    )
+    assert ntfy_push.main(["ntfy_push", str(f)]) == 0
+    assert len(mandados) == 1
+
+
+def test_entregar_reintenta_con_backoff_y_luego_pega(monkeypatch):
+    intentos: list[int] = []
+    esperas: list[float] = []
+
+    def post_flaky(p):
+        intentos.append(1)
+        if len(intentos) < 3:
+            raise OSError("timeout")
+        return 200
+
+    monkeypatch.setattr(ntfy_push, "_post", post_flaky)
+    monkeypatch.setattr(ntfy_push.time, "sleep", lambda s: esperas.append(s))
+    assert ntfy_push.entregar({"url": "u", "body": "b", "headers": {}}) == 200
+    assert len(intentos) == 3
+    assert esperas == list(ntfy_push.REINTENTOS_BACKOFF_S)
+
+
+def test_entregar_se_rinde_despues_de_agotar_reintentos(monkeypatch):
+    monkeypatch.setattr(
+        ntfy_push, "_post", lambda p: (_ for _ in ()).throw(OSError("caído"))
+    )
+    monkeypatch.setattr(ntfy_push.time, "sleep", lambda s: None)
+    with pytest.raises(OSError):
+        ntfy_push.entregar({"url": "u", "body": "b", "headers": {}})
+
+
+def test_exit_blocked_no_colisiona_con_codigos_reservados():
+    # argparse sale con 2 en errores de uso; 1 es fallo genérico; 64 es el
+    # usage del pusher; 126-128+ son del shell. Si EXIT_BLOCKED cae en uno de
+    # ésos, el workflow no puede distinguir "decisión bloqueada: publícala"
+    # de "el CLI ni siquiera corrió" — fue un bug real con el 2.
+    from inversor.__main__ import EXIT_BLOCKED
+
+    assert EXIT_BLOCKED not in (0, 1, 2, 64, 126, 127, 128, 130)

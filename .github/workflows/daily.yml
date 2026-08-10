@@ -19,8 +19,12 @@ on:
   workflow_dispatch:
     inputs:
       held_mxn:
-        description: "Sleeve cripto actual en MXN"
-        default: "0"
+        # Default VACÍO a propósito: en las expresiones de Actions el string
+        # "0" es truthy, así que un default "0" eclipsaba vars.HELD_MXN en
+        # todo dispatch manual y el engine corría con held=0 aunque el sleeve
+        # real estuviera configurado.
+        description: "Sleeve cripto actual en MXN (vacío = usar vars.HELD_MXN)"
+        default: ""
 
 permissions:
   contents: write
@@ -63,10 +67,12 @@ jobs:
           BANXICO_TOKEN: ${{ secrets.BANXICO_TOKEN }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}   # opcional; market_stress degrada sin ella
         run: |
-          # exit 2 = decisión BLOQUEADA. Es una salida VÁLIDA y se publica:
-          # el log walk-forward debe mostrar los días bloqueados (reglas 3 y
-          # 4), y el estado de cooldowns debe persistir aunque hoy se bloquee.
-          # Cualquier otro código distinto de 0 es un fallo real del engine.
+          # exit 42 (EXIT_BLOCKED) = decisión BLOQUEADA. Es una salida VÁLIDA
+          # y se publica: el log walk-forward debe mostrar los días bloqueados
+          # (reglas 3 y 4) y el estado de cooldowns debe persistir igual.
+          # 42 y no 2: argparse sale con 2 en errores de uso, y con ambos en 2
+          # un typo en las vars dejaba el job verde sin correr el engine.
+          # Cualquier otro código distinto de 0 es un fallo real.
           set +e
           python -m inversor run \
             --capital "${{ vars.CAPITAL_MXN || '50000' }}" \
@@ -78,48 +84,87 @@ jobs:
             --out ../snapshots
           code=$?
           set -e
-          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then exit "$code"; fi
-          [ "$code" -eq 2 ] && echo "::warning::Decisión de hoy: BLOQUEADA (se publica igual)"
+          if [ "$code" -ne 0 ] && [ "$code" -ne 42 ]; then exit "$code"; fi
+          [ "$code" -eq 42 ] && echo "::warning::Decisión de hoy: BLOQUEADA (se publica igual)"
           true
 
-      - name: notifications.json es append-only — fallar si se encogió
-        # Es el log Y la memoria de cooldowns e histéresis entre corridas. Si
-        # se encoge, el anti-spam pierde el estado y el sistema vuelve a
-        # avisar de todo. Encogerse incluye desaparecer.
+      - name: Guard del log — append-only real y sin reescritura de días pasados
+        # notifications.json es el log Y la memoria de cooldowns e histéresis:
+        # si se encoge O se reescribe, el anti-spam pierde el estado. Comparar
+        # longitudes no basta — una reescritura del mismo largo pasaba — así
+        # que se exige que lo committeado sea PREFIJO exacto de lo nuevo.
+        # Y ningún snapshot fechado de un día PASADO puede cambiar (regla 3);
+        # el de HOY sí: re-correr el mismo día es un refinamiento y la versión
+        # anterior queda recuperable en la historia de git.
         run: |
-          if git cat-file -e HEAD:snapshots/notifications.json 2>/dev/null; then
-            viejo=$(git show HEAD:snapshots/notifications.json | jq length)
-            if [ ! -f snapshots/notifications.json ]; then
-              echo "::error::snapshots/notifications.json desapareció (HEAD tenía $viejo registros)"
-              exit 1
-            fi
-            nuevo=$(jq length snapshots/notifications.json)
-            if [ "$nuevo" -lt "$viejo" ]; then
-              echo "::error::notifications.json se encogió: $viejo → $nuevo registros. Append-only violado."
-              exit 1
-            fi
-            echo "append-only OK: $viejo → $nuevo registros"
-          else
-            echo "primera corrida: no hay notifications.json previo en HEAD"
-          fi
+          python3 - <<'PY'
+          import json, re, subprocess, sys
+          from datetime import datetime, timezone
+
+          def head(path):
+              p = subprocess.run(["git", "show", f"HEAD:{path}"],
+                                 capture_output=True, text=True)
+              return p.stdout if p.returncode == 0 else None
+
+          viejo_raw = head("snapshots/notifications.json")
+          if viejo_raw is None:
+              print("primera corrida: no hay notifications.json en HEAD")
+          else:
+              viejo = json.loads(viejo_raw)
+              try:
+                  nuevo = json.load(open("snapshots/notifications.json"))
+              except FileNotFoundError:
+                  sys.exit(f"::error::notifications.json desapareció (HEAD tenía {len(viejo)} registros)")
+              if not isinstance(viejo, list) or not isinstance(nuevo, list):
+                  sys.exit("::error::notifications.json debe ser una lista append-only")
+              if nuevo[:len(viejo)] != viejo:
+                  sys.exit(f"::error::append-only violado: los primeros {len(viejo)} registros cambiaron")
+              print(f"append-only OK: {len(viejo)} → {len(nuevo)} registros")
+
+          hoy = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+          diff = subprocess.run(
+              ["git", "diff", "--name-status", "HEAD", "--", "snapshots/"],
+              capture_output=True, text=True, check=True).stdout
+          for linea in diff.splitlines():
+              partes = linea.split("\t")
+              status, path = partes[0], partes[-1]
+              m = re.search(r"(\d{4}-\d{2}-\d{2})\.json$", path)
+              if m and m.group(1) != hoy:
+                  sys.exit(f"::error::{path} es de un día pasado y cambió ({status}). Regla 3: el log no se reescribe.")
+          print("snapshots de días pasados intactos")
+          PY
 
       - name: Commit del snapshot
         run: |
           git config user.name  "inversor-bot"
           git config user.email "bot@users.noreply.github.com"
           git add snapshots/
-          git diff --staged --quiet || git commit -m "decisión $(date -u +%F)"
-          git push
+          git diff --staged --quiet && exit 0
+          git commit -m "decisión $(date -u +%F)"
+          # El push puede chocar con un push humano hecho durante los ~2-3
+          # minutos que tarda el job. Rebase del commit local NO publicado y
+          # reintento: perder el push es perder el día en el log walk-forward.
+          for intento in 1 2 3; do
+            git push && exit 0
+            echo "push rechazado (intento $intento): main avanzó; rebase y reintento"
+            git pull --rebase origin main
+          done
+          echo "::error::no se pudo pushear el snapshot tras 3 intentos"
+          exit 1
+
+      - name: Resumen en el job
+        # ANTES de ntfy: si la entrega falla (job rojo), el resumen con la
+        # decisión del día es exactamente lo que quieres ver al abrir el run.
+        run: cat snapshots/latest.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Avisos por ntfy.sh
         # DESPUÉS del commit, a propósito: un aviso entregado cuyo cooldown no
         # quedó persistido se re-dispararía mañana. Sin NTFY_TOPIC el paso se
-        # omite solo; con 0 avisos no manda nada (el silencio no se entrega).
+        # omite solo; con 0 avisos no manda nada (el silencio no se entrega);
+        # con un notifications-latest.json de una corrida vieja (>24 h) falla
+        # en vez de re-entregar avisos rancios.
         working-directory: engine
         env:
           PYTHONPATH: src
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python -m inversor.scripts.ntfy_push ../snapshots/notifications-latest.json
-
-      - name: Resumen en el job
-        run: cat snapshots/latest.md >> "$GITHUB_STEP_SUMMARY"
