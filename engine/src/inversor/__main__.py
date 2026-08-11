@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import fields, replace
+from dataclasses import MISSING, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +21,11 @@ from .decide import Decision, decide
 from .notify import NotifyPolicy, evaluate_with_audit
 from .notify_sinks import render_markdown
 from .report import to_markdown, write_snapshot
+from .signals import SignalState, combinar
 from .sources import banxico as bx
 from .sources import market_data as md
+from .sources import market_stress as ms
+from .sources import news
 
 BANXICO_KEYS = [
     "fix_usdmxn",
@@ -79,13 +82,28 @@ def _load_previous_decision(out_dir: Path, current: Decision) -> Decision | None
             f" ({', '.join(extras)}). Se ignoran: son aditivos y el mayor no cambió.",
             file=sys.stderr,
         )
-    faltantes = sorted(conocidos - set(data))
+    # Al revés depende de QUIÉN escribió el snapshot previo. Si es de un menor
+    # ANTERIOR (p.ej. 3.0.0 leído por un engine 3.1.0), los campos aditivos
+    # nuevos faltan por definición y rehidratan con su default — eso es
+    # exactamente lo que el contrato promete para adiciones con el mismo
+    # mayor, y exigirlos rompía la primera corrida después de cada adición.
+    # Si es del MISMO menor (o más nuevo), un campo conocido que falta es una
+    # remoción disfrazada: truena fuerte, eso exige subir el mayor.
+    menor_previo = int(str(data.get("schema_version", "0.0.0")).split(".")[1])
+    menor_actual = int(current.schema_version.split(".")[1])
+    if menor_previo >= menor_actual:
+        requeridos = conocidos
+    else:
+        requeridos = {
+            f.name
+            for f in fields(Decision)
+            if f.default is MISSING and f.default_factory is MISSING
+        }
+    faltantes = sorted(requeridos - set(data))
     if faltantes:
-        # Al revés no: un campo que YA no viene cambia el significado de la
-        # comparación campo a campo y eso exige subir el mayor. Truena fuerte.
         raise ValueError(
-            f"El snapshot previo no trae {faltantes} con el mismo schema mayor"
-            f" ({data.get('schema_version')}). Quitar campos exige subir SCHEMA_VERSION."
+            f"El snapshot previo ({data.get('schema_version')}) no trae {faltantes}."
+            " Quitar campos con el mismo mayor exige subir SCHEMA_VERSION."
         )
     return Decision(**{k: v for k, v in data.items() if k in conocidos})
 
@@ -138,6 +156,50 @@ def cmd_notify_step(
     )
 
 
+def gather_signal_state(policy: Policy) -> SignalState | None:
+    """
+    Junta estrés (F&G, DVOL, VIX) y noticias (RSS; GDELT/DOF tras bandera) y
+    los combina en un SignalState.
+
+    Sin try/except tragón a propósito: recolectar(), fetch_todos_los_rss() y
+    ruptura_estructural() ya convierten cada fallo de red en un renglón de
+    caídas — la ceguera entra al combinador como ceguera (regla 8), nunca
+    tumba la corrida ni se lee como calma.
+    """
+    if not policy.signals.enabled:
+        return None
+    lecturas, caidas = ms.recolectar()
+    apagadas: list[str] = []
+
+    if policy.signals.gdelt_enabled:
+        volumen = news.fetch_volumen_anomalo(policy.signals.gdelt_consulta)
+    else:
+        volumen = None
+        apagadas.append("volumen_noticias")
+
+    if policy.signals.dof_enabled:
+        # fetch_ruptura_estructural incluye SIDOF/DOF incondicionalmente.
+        ruptura, caidas_news = news.fetch_ruptura_estructural()
+        caidas = list(caidas) + list(caidas_news)
+    else:
+        # Sólo RSS: se componen a mano las piezas puras para no tocar SIDOF.
+        notas, caidas_rss = news.fetch_todos_los_rss()
+        caidas = list(caidas) + list(caidas_rss)
+        # 0 notas = todos los feeds caídos: ausencia de la fuente, no ausencia
+        # de rupturas. ruptura_estructural(None) lo modela como no disponible.
+        ruptura = news.ruptura_estructural(notas if notas else None)
+
+    return combinar(
+        fear_greed=lecturas.get("fear_greed"),
+        dvol=lecturas.get("dvol_btc"),
+        vix=lecturas.get("vix"),
+        volumen=volumen,
+        ruptura=ruptura,
+        fuentes_no_disponibles=caidas,
+        apagadas=apagadas,
+    )
+
+
 def build_policy(args: argparse.Namespace) -> Policy:
     p = Policy()
     p = replace(
@@ -178,11 +240,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     closes = {s: [c for _, c in v] for s, v in series.items()}
     closes_as_of = {s: v[-1][0] for s, v in series.items()}
 
+    senales = gather_signal_state(policy)
+    if senales is not None and senales.fuentes_no_disponibles:
+        print(
+            f"[signals] {len(senales.fuentes_no_disponibles)} fuente(s) no"
+            f" disponible(s): {'; '.join(senales.fuentes_no_disponibles)[:300]}",
+            file=sys.stderr,
+        )
+
     d = decide(
         policy, obs, closes,
         current_crypto_mxn=args.held,
         closes_as_of=closes_as_of,
         venues=venues,
+        signal_state=senales,
     )
     reporte = to_markdown(d)   # no reusar el nombre `md`: es el módulo market_data
     print(reporte)

@@ -11,10 +11,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Literal
 
-SCHEMA_VERSION = "3.0.0"
+SCHEMA_VERSION = "3.1.0"
 # 2.0.0: hurdle anualizado vs periodo (breaking)
 # 3.0.0: activos canónicos BTC/ETH en vez de pares de Binance (breaking:
 #        cambian las llaves de allocation_mxn), + frescura de precios
+# 3.1.0: campos ADITIVOS `signals` y `eventos` (señales de estrés/noticias y
+#        calendario con escenarios de Banxico). Mismo mayor: los snapshots
+#        3.0.0 siguen siendo comparables — los campos nuevos rehidratan con
+#        sus defaults.
 
 
 @dataclass(frozen=True)
@@ -106,12 +110,39 @@ class Universe:
 
 
 @dataclass(frozen=True)
+class SignalsPolicy:
+    """
+    Qué fuentes de señales se consultan. Las señales sólo pueden REDUCIR el
+    tamaño o BLOQUEAR (regla 8); estas banderas deciden a quién se le pregunta.
+    Una fuente APAGADA no cuenta para el recorte por ceguera — apagada no es
+    caída — pero jamás se lee como calma: simplemente no opina.
+    """
+    # Apagado maestro de la capa de señales (diagnóstico/emergencia).
+    enabled: bool = True
+
+    # GDELT rate-limita agresivo: 429 y luego 500 en pruebas en vivo del
+    # 10-ago-2026. Apagado hasta medir su tolerancia real (Prompt 6); dejarlo
+    # encendido y caído haría del recorte por ceguera el estado permanente.
+    gdelt_enabled: bool = False
+
+    # Consulta de GDELT para el volumen de noticias. [SIN CALIBRAR — Prompt 6:
+    # elegirla junto con la medición de rate limit.]
+    gdelt_consulta: str = "bitcoin OR ethereum OR criptomonedas"
+
+    # Los query params de SIDOF (getJSON/65) están sin documentar; hoy el
+    # fetcher es una fuente permanentemente ciega. Apagado hasta capturar los
+    # params reales del inspector de red (Prompt 6).
+    dof_enabled: bool = False
+
+
+@dataclass(frozen=True)
 class Policy:
     portfolio: Portfolio = field(default_factory=Portfolio)
     tax: TaxPolicy = field(default_factory=TaxPolicy)
     risk: RiskPolicy = field(default_factory=RiskPolicy)
     cost: CostPolicy = field(default_factory=CostPolicy)
     universe: Universe = field(default_factory=Universe)
+    signals: SignalsPolicy = field(default_factory=SignalsPolicy)
 
     # Prima de riesgo exigida por encima del hurdle CETES para justificar
     # tomar volatilidad de ~45% anual y riesgo cambiario sin cobertura.
@@ -167,4 +198,8 @@ Action = Literal[
     "BLOCKED_FEE_BUDGET",
     "BLOCKED_STALE_DATA",
     "BLOCKED_BELOW_MIN_NOTIONAL",
+    # Una coincidencia con la lista curada de rupturas regulatorias (CNBV,
+    # SAT, LISR 93/134, LIF) invalida el MODELO, no el precio. Exige revisión
+    # humana; ningún multiplicador lo resuelve (regla 8).
+    "BLOCKED_STRUCTURAL_BREAK",
 ]

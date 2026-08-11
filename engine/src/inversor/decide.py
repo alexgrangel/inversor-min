@@ -18,16 +18,25 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
 
+from . import events as ev
 from .config import SCHEMA_VERSION, Policy
 from .costs import CostBudget, compute_cost_budget, min_notional_ok
 from .regime import RegimeState, blended_multiplier, classify
 from .risk import Sizing, size_crypto_sleeve
+from .signals import SignalState
 from .sources import banxico as bx
 from .tax import annualized_to_period, crypto_effective_isr_rate, hurdle_rate
 
 # Banda de no-operación: por debajo de esto, el costo de rebalancear supera
 # el beneficio de corregir la desviación.
 REBALANCE_BAND_RELATIVE = 0.25
+
+# Ventana del calendario de eventos en el snapshot. 60 y no 30: la separación
+# máxima entre juntas consecutivas de Banxico en 2026 es de 42 días (24-sep →
+# 5-nov → 17-dic), así que 60 garantiza que la próxima decisión de tasa SIEMPRE
+# aparezca con sus escenarios precalculados; con 30, agosto se quedaba sin ver
+# la junta de septiembre. Juicio de ventana, no dato (regla 5).
+EVENTOS_VENTANA_DIAS = 60
 
 
 @dataclass
@@ -47,6 +56,9 @@ class Decision:
     required_returns: dict[str, Any] = field(default_factory=dict)
     fx: dict[str, Any] = field(default_factory=dict)
     data_freshness: dict[str, Any] = field(default_factory=dict)
+    # Aditivos en 3.1.0: señales de estrés/noticias y calendario de eventos.
+    signals: dict[str, Any] = field(default_factory=dict)
+    eventos: dict[str, Any] = field(default_factory=dict)
     policy: dict[str, Any] = field(default_factory=dict)
 
     def to_json_dict(self) -> dict:
@@ -80,6 +92,7 @@ def decide(
     today: date | None = None,
     closes_as_of: dict[str, date] | None = None,
     venues: dict[str, str] | None = None,
+    signal_state: SignalState | None = None,
 ) -> Decision:
     today = today or date.today()
     d = Decision(
@@ -121,6 +134,28 @@ def decide(
         d.blockers.extend(stale)
         d.headline = "Datos rancios. No se emite recomendación ni se calcula nada más."
         return d
+
+    # ---------- 1b. Señales de estrés y noticias ----------
+    # Las señales sólo pueden REDUCIR el tamaño o BLOQUEAR (regla 8). El
+    # multiplicador se compone más abajo, en el paso 3; aquí entran al
+    # snapshot, las fuentes caídas a warnings, y la ruptura estructural
+    # bloquea ANTES de calcular nada: invalida el MODELO (fiscal/regulatorio),
+    # no el precio — nada de lo que sigue sobrevive a eso.
+    if signal_state is not None:
+        d.signals = signal_state.to_json_dict()
+        d.warnings.extend(
+            f"Señales — fuente no disponible: {f}"
+            for f in signal_state.fuentes_no_disponibles
+        )
+        if signal_state.blockers:
+            d.action = "BLOCKED_STRUCTURAL_BREAK"
+            d.blockers.extend(signal_state.blockers)
+            d.headline = (
+                "Ruptura estructural detectada. Lo que está en duda es el modelo"
+                " (fiscal o regulatorio), no el precio. Revisión humana antes de"
+                " operar; ningún multiplicador resuelve esto."
+            )
+            return d
 
     fix = obs["fix_usdmxn"].value
     inflation = obs["inpc_anual"].value / 100.0
@@ -190,8 +225,13 @@ def decide(
         d.headline = "Datos de mercado insuficientes. Sin recomendación."
         return d
 
-    mult = blended_multiplier(states, weights)
+    mult_regimen = blended_multiplier(states, weights)
     vol_blend = sum(s.vol_30d * w for s, w in zip(states, weights))
+
+    # Señales y régimen leen el MISMO estado de estrés por ventanas distintas:
+    # se componen por MÍNIMO (manda el que más aprieta), no por producto — el
+    # producto contaría el mismo estrés dos veces.
+    mult = signal_state.aplicar(mult_regimen) if signal_state is not None else mult_regimen
 
     sizing: Sizing = size_crypto_sleeve(
         investable_mxn=investable,
@@ -206,15 +246,70 @@ def decide(
     d.sizing = {
         **{k: v for k, v in asdict(sizing).items() if k != "notes"},
         "notes": list(sizing.notes),
-        "regime_multiplier": mult,
+        "regime_multiplier": mult_regimen,
+        "signals_multiplier": signal_state.multiplicador if signal_state is not None else None,
+        "combined_multiplier": mult,
         "regimes": [
             {**{k: v for k, v in asdict(s).items() if k != "signals"}, "signals": list(s.signals)}
             for s in states
         ],
     }
     d.reasons.extend(sizing.notes)
+    if signal_state is not None:
+        d.reasons.extend(signal_state.razones)
+        if mult < mult_regimen:
+            d.reasons.append(
+                f"Las señales aprietan más que el régimen: multiplicador combinado"
+                f" {mult:.2f} = min(régimen {mult_regimen:.2f}, señales"
+                f" {signal_state.multiplicador:.2f})."
+            )
 
     target_sleeve = sizing.weight_mxn
+
+    # ---------- 3b. Eventos de calendario ----------
+    # El reemplazo honesto del "tiempo real": no sabemos qué hará Banxico,
+    # sabemos exactamente CUÁNDO. Los escenarios son declarados, no
+    # pronósticos (regla 1) — la verificación cruzada de escenarios_banxico
+    # truena si el escenario "sin cambio" no reproduce el hurdle de arriba.
+    proximos = ev.proximos_eventos(today=today, dias=EVENTOS_VENTANA_DIAS)
+    escenarios = ev.escenarios_banxico(
+        hurdle_annual, curve, policy, inflation,
+        vol_annual=vol_blend, multiplicador=mult,
+    )
+    d.eventos = {
+        "ventana_dias": EVENTOS_VENTANA_DIAS,
+        "proximos": [
+            {
+                "fecha": e.fecha.isoformat(),
+                "tipo": e.tipo,
+                "nombre": e.nombre,
+                "fuente": e.fuente,
+                "verificado": e.verificado,
+                "fecha_fin": e.fecha_fin.isoformat() if e.fecha_fin else None,
+                "nota": e.nota,
+            }
+            for e in proximos
+        ],
+        "escenarios_banxico": [
+            {**{k: v for k, v in asdict(x).items() if k != "supuestos"},
+             "supuestos": list(x.supuestos)}
+            for x in escenarios
+        ],
+    }
+    for e in proximos:
+        if e.tipo == "CALENDARIO_AGOTADO":
+            d.warnings.append(e.nota or e.nombre)
+    banxico_prox = next((e for e in proximos if e.tipo == "BANXICO"), None)
+    recorte_50 = next((x for x in escenarios if x.movimiento_bp == -50), None)
+    if banxico_prox and recorte_50:
+        d.reasons.append(
+            f"Banxico decide el {banxico_prox.fecha.isoformat()}. Si recorta 50 pb,"
+            f" el hurdle anualizado baja de {hurdle_annual:.2%} a"
+            f" {recorte_50.hurdle_anualizado:.2%} y el sleeve objetivo pasa a"
+            f" {recorte_50.sleeve_objetivo_mxn:,.0f} MXN"
+            f" ({recorte_50.delta_sleeve_mxn:+,.0f}). Escenario declarado con la"
+            " curva de hoy, no pronóstico."
+        )
 
     # ---------- 4. Presupuesto de comisiones ----------
     # Sin max(target_sleeve, 1.0): inventar un sleeve de 1 peso producía

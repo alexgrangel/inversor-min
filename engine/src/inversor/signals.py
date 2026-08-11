@@ -124,11 +124,16 @@ class SignalState:
 
     def aplicar(self, multiplicador_base: float) -> float:
         """
-        Compone con el multiplicador de régimen. Por construcción el resultado
-        es <= multiplicador_base: las señales aprietan, nunca aflojan.
+        Compone con el multiplicador de régimen tomando el MÍNIMO, no el
+        producto. El régimen (SMA/percentil de vol) y las señales (F&G, DVOL,
+        VIX) leen el MISMO estado de estrés por ventanas distintas:
+        multiplicarlos cuenta el mismo estrés dos veces — 0.30 de régimen por
+        0.60 de señales daría 0.18, un doble castigo por un solo hecho. Manda
+        el que más aprieta. Por construcción el resultado es
+        <= multiplicador_base: las señales aprietan, nunca aflojan.
         """
         base = _clamp(multiplicador_base)
-        return min(base * self.multiplicador, base)
+        return min(base, self.multiplicador)
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
@@ -183,6 +188,7 @@ def combinar(
     volumen: VolumenAnomalo | None = None,
     ruptura: RupturaEstructural | None = None,
     fuentes_no_disponibles: Any = (),
+    apagadas: Any = (),
     hoy: date | None = None,
     max_staleness_days: int | None = None,
 ) -> SignalState:
@@ -193,17 +199,29 @@ def combinar(
     "no sé nada", que recorta por ceguera y no por estrés. Cualquier entrada
     inutilizable (None, NaN, rancia, con forma equivocada) se contabiliza como
     fuente no disponible, no como fuente en calma.
+
+    `apagadas` distingue "no se consultó por decisión de política" de "se
+    consultó y no respondió". Una fuente APAGADA por bandera (hoy: GDELT y
+    DOF hasta el Prompt 6) no entra al conteo de ceguera — sin este estado,
+    apagar dos fuentes activaba el recorte de 0.60x permanentemente y el
+    recorte dejaba de ser información. Sólo aplica a volumen_noticias y
+    ruptura_estructural: los indicadores de estrés no tienen bandera a
+    propósito, su fallo SÍ es ceguera. Una fuente apagada jamás se lee como
+    calma: simplemente no opina.
     """
     hoy = hoy or date.today()
     razones: list[str] = []
     blockers: list[str] = []
     caidas: list[str] = [str(x) for x in _como_lista(fuentes_no_disponibles)]
+    apagadas_set = {str(x).strip().casefold() for x in _como_lista(apagadas)}
     recortes: list[float] = [MULT_MAXIMO]
 
     # ---------- Fear & Greed ----------
+    # El motivo ya viene etiquetado por _lectura; re-prefijarlo producía
+    # renglones tipo "fear_greed: fear_greed: sin dato." en el snapshot.
     v, motivo = _lectura(fear_greed, hoy, max_staleness_days, "fear_greed")
     if v is None:
-        caidas.append(f"fear_greed: {motivo}")
+        caidas.append(motivo)
     elif v <= FG_MIEDO_EXTREMO:
         recortes.append(_recorte(MULT_FG_MIEDO_EXTREMO))
         razones.append(
@@ -225,7 +243,7 @@ def combinar(
     # ---------- DVOL ----------
     v, motivo = _lectura(dvol, hoy, max_staleness_days, "dvol_btc")
     if v is None:
-        caidas.append(f"dvol: {motivo}")
+        caidas.append(motivo)
     elif v >= DVOL_EXTREMO:
         recortes.append(_recorte(MULT_DVOL_EXTREMO))
         razones.append(
@@ -243,7 +261,7 @@ def combinar(
     # ---------- VIX ----------
     v, motivo = _lectura(vix, hoy, max_staleness_days, "vix")
     if v is None:
-        caidas.append(f"vix: {motivo}")
+        caidas.append(motivo)
     elif v >= VIX_EXTREMO:
         recortes.append(_recorte(MULT_VIX_EXTREMO))
         razones.append(
@@ -256,7 +274,12 @@ def combinar(
         razones.append(f"VIX en {v:.1f}: por debajo de {VIX_ELEVADO:.0f}, sin recorte.")
 
     # ---------- Volumen de noticias ----------
-    if volumen is None or not getattr(volumen, "disponible", False):
+    if volumen is None and "volumen_noticias" in apagadas_set:
+        razones.append(
+            "Volumen de noticias: fuente apagada por bandera (GDELT pendiente de"
+            " estabilizarse). No cuenta como ceguera ni como calma: no opina."
+        )
+    elif volumen is None or not getattr(volumen, "disponible", False):
         nota = getattr(volumen, "nota", "sin dato") if volumen is not None else "sin dato"
         caidas.append(f"volumen_noticias: {nota}")
     elif getattr(volumen, "anomalo", False):
@@ -273,7 +296,12 @@ def combinar(
         )
 
     # ---------- Ruptura estructural ----------
-    if ruptura is None or not getattr(ruptura, "disponible", False):
+    if ruptura is None and "ruptura_estructural" in apagadas_set:
+        razones.append(
+            "Ruptura estructural: fuente apagada por bandera. No cuenta como"
+            " ceguera ni como calma: no opina."
+        )
+    elif ruptura is None or not getattr(ruptura, "disponible", False):
         nota = getattr(ruptura, "nota", "sin dato") if ruptura is not None else "sin dato"
         caidas.append(f"ruptura_estructural: {nota}")
     elif getattr(ruptura, "detectada", False):
@@ -299,11 +327,17 @@ def combinar(
         )
 
     # ---------- Ceguera ----------
-    caidas = [c for c in caidas if c]
-    if len(caidas) >= FUENTES_CAIDAS_QUE_RECORTAN:
+    caidas = [c for c in caidas if c and str(c).strip()]
+    # El umbral cuenta FUENTES únicas, no renglones: una misma fuente caída
+    # puede llegar dos veces (el renglón del recolector aguas arriba Y el del
+    # slot en None), y contar renglones disparaba el recorte por ceguera con
+    # una sola fuente real caída.
+    fuentes_ciegas = {_fuente_de_caida(c) for c in caidas}
+    if len(fuentes_ciegas) >= FUENTES_CAIDAS_QUE_RECORTAN:
         recortes.append(_recorte(MULT_FUENTES_CAIDAS))
         razones.append(
-            f"{len(caidas)} fuentes no disponibles (≥ {FUENTES_CAIDAS_QUE_RECORTAN}):"
+            f"{len(fuentes_ciegas)} fuentes no disponibles"
+            f" (≥ {FUENTES_CAIDAS_QUE_RECORTAN}):"
             f" tamaño x{MULT_FUENTES_CAIDAS:.2f}. No saber en qué estado está el mercado"
             " es en sí mismo una razón para tener menos, nunca para tener lo mismo."
         )
@@ -326,6 +360,16 @@ def combinar(
         razones=razones,
         fuentes_no_disponibles=caidas,
     )
+
+
+def _fuente_de_caida(renglon: str) -> str:
+    """
+    La fuente de un renglón de caída: el texto antes del primer ':'. dvol_btc
+    y dvol_eth colapsan a 'dvol' porque alimentan el mismo slot del combinador
+    (el recolector etiqueta 'dvol_btc: ...' y el slot en None 'dvol...').
+    """
+    etiqueta = str(renglon).split(":", 1)[0].strip().casefold()
+    return "dvol" if etiqueta.startswith("dvol") else etiqueta
 
 
 def _como_lista(x: Any) -> list[Any]:

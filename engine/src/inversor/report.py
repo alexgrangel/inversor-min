@@ -14,6 +14,7 @@ ACTION_ES = {
     "BLOCKED_FEE_BUDGET": "Bloqueado: presupuesto de comisiones agotado",
     "BLOCKED_STALE_DATA": "Bloqueado: datos rancios",
     "BLOCKED_BELOW_MIN_NOTIONAL": "Bloqueado: por debajo del mínimo operable",
+    "BLOCKED_STRUCTURAL_BREAK": "Bloqueado: ruptura estructural — revisión humana",
 }
 
 
@@ -120,6 +121,36 @@ def to_markdown(d: Decision) -> str:
         L.append("|---|---:|")
         for s in d.fx["sensibilidad"]:
             L.append(f"| {s['escenario_mxn']:+.0%} | {s['rendimiento_usd_requerido']:.2%} |")
+        L.append("")
+
+    ev = d.eventos
+    if ev.get("proximos"):
+        L.append("## Próximos eventos")
+        L.append("")
+        L.append("| Fecha | Evento | Verificado |")
+        L.append("|---|---|---|")
+        for e in ev["proximos"]:
+            marca = "✓" if e["verificado"] else "derivado"
+            L.append(f"| {e['fecha']} | {e['nombre']} | {marca} |")
+        L.append("")
+    if ev.get("escenarios_banxico"):
+        L.append("### Si Banxico mueve la tasa (escenarios declarados, no pronósticos)")
+        L.append("")
+        L.append("| Movimiento | Hurdle anualizado | Sleeve objetivo | Δ sleeve | Restricción |")
+        L.append("|---|---:|---:|---:|---|")
+        for s in ev["escenarios_banxico"]:
+            L.append(
+                f"| {s['movimiento_bp']:+d} pb | {s['hurdle_anualizado']:.2%}"
+                f" | {s['sleeve_objetivo_mxn']:,.0f} MXN | {s['delta_sleeve_mxn']:+,.0f}"
+                f" | {s['restriccion']} |"
+            )
+        L.append("")
+        L.append(
+            "_El sizing de escenarios suma el costo de oportunidad de CETES al"
+            " presupuesto de caída: es igual o MÁS estricto que el sizing del día."
+            " `below_floor` significa que el sleeve resultante queda bajo el piso"
+            " operable y se va a cero._"
+        )
         L.append("")
 
     if d.reasons:
