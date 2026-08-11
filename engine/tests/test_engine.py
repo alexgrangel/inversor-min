@@ -158,12 +158,14 @@ def test_multiplicador_de_regimen_nunca_amplifica():
 
 
 def test_restriccion_reportada_es_la_que_realmente_manda():
-    """Si el multiplicador de régimen recorta más que la restricción ganadora,
-    reportar la restricción original le miente al usuario sobre por qué su
-    posición es del tamaño que es."""
+    """Si el multiplicador recorta más que la restricción ganadora, reportar
+    la restricción original le miente al usuario sobre por qué su posición es
+    del tamaño que es. La etiqueta es neutra ('multiplicador', no 'regime'):
+    desde el Prompt 5 aquí llega el combinado régimen ∩ señales, y atribuirle
+    al régimen un recorte de señales era la misma mentira con otro nombre."""
     s = size_crypto_sleeve(45_000, 0.45, 0.08, 0.08, 0.75, 0.20, 0.0,
                            regime_multiplier=0.45)
-    assert "regime_multiplier" in s.binding_constraint
+    assert s.binding_constraint == "multiplicador(0.45)"
     assert s.weight == pytest.approx(min(0.08 / 0.45, 0.08 / 0.75, 0.20) * 0.45)
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import MISSING, fields, replace
+from dataclasses import fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +39,15 @@ BANXICO_KEYS = [
 
 NOTIFY_HISTORY = "notifications.json"
 NOTIFY_LATEST = "notifications-latest.json"
+
+# Qué campos agregó cada minor del schema (mayor 3). La rehidratación del
+# snapshot previo perdona EXACTAMENTE estos campos cuando el snapshot viene de
+# un minor anterior — nada más. Perdonar "todo lo que tenga default" aceptaba
+# en silencio un 3.0.0 corrupto al que le faltaran blockers o hurdle.
+# Manténlo al día junto con el historial de SCHEMA_VERSION en config.py.
+CAMPOS_AGREGADOS_POR_MINOR: dict[int, frozenset[str]] = {
+    1: frozenset({"signals", "eventos"}),  # 3.1.0 (Prompt 5)
+}
 
 # Código de salida para decisión BLOQUEADA. 42 y no 2 a propósito: argparse
 # sale con 2 en errores de uso (un --capital "50,000" con coma, por ejemplo),
@@ -83,22 +92,34 @@ def _load_previous_decision(out_dir: Path, current: Decision) -> Decision | None
             file=sys.stderr,
         )
     # Al revés depende de QUIÉN escribió el snapshot previo. Si es de un menor
-    # ANTERIOR (p.ej. 3.0.0 leído por un engine 3.1.0), los campos aditivos
-    # nuevos faltan por definición y rehidratan con su default — eso es
-    # exactamente lo que el contrato promete para adiciones con el mismo
-    # mayor, y exigirlos rompía la primera corrida después de cada adición.
-    # Si es del MISMO menor (o más nuevo), un campo conocido que falta es una
-    # remoción disfrazada: truena fuerte, eso exige subir el mayor.
-    menor_previo = int(str(data.get("schema_version", "0.0.0")).split(".")[1])
-    menor_actual = int(current.schema_version.split(".")[1])
+    # ANTERIOR (p.ej. 3.0.0 leído por un engine 3.1.0), le faltan por
+    # definición los campos que los minors posteriores agregaron — ésos, y
+    # SÓLO ésos (CAMPOS_AGREGADOS_POR_MINOR), rehidratan con su default. Si es
+    # del MISMO menor o más nuevo, un campo conocido que falta es una remoción
+    # disfrazada: truena fuerte, eso exige subir el mayor.
+    try:
+        menor_previo = int(str(data.get("schema_version", "")).split(".")[1])
+        menor_actual = int(current.schema_version.split(".")[1])
+    except (IndexError, ValueError):
+        # Un schema_version ilegible es un latest.json editado o truncado. No
+        # es comparable, y tronar aquí costaría el snapshot de HOY (esto corre
+        # antes de write_snapshot): primera corrida efectiva, con nota.
+        print(
+            f"[notify] schema_version ilegible en el snapshot previo"
+            f" ({data.get('schema_version')!r}): no comparable. Sin notificaciones hoy.",
+            file=sys.stderr,
+        )
+        return None
     if menor_previo >= menor_actual:
-        requeridos = conocidos
+        requeridos = set(conocidos)
     else:
-        requeridos = {
-            f.name
-            for f in fields(Decision)
-            if f.default is MISSING and f.default_factory is MISSING
+        agregados_despues = {
+            campo
+            for menor, campos in CAMPOS_AGREGADOS_POR_MINOR.items()
+            if menor > menor_previo
+            for campo in campos
         }
+        requeridos = set(conocidos) - agregados_despues
     faltantes = sorted(requeridos - set(data))
     if faltantes:
         raise ValueError(

@@ -82,12 +82,15 @@ def size_crypto_sleeve(
     mult = min(regime_multiplier, 1.0)
     w = base * mult
 
-    # Si el multiplicador de régimen recortó más que la restricción "ganadora",
-    # el que manda es el régimen. Reportar 'drawdown_budget' cuando en realidad
+    # Si el multiplicador recortó más que la restricción "ganadora", el que
+    # manda es el multiplicador. Reportar 'drawdown_budget' cuando en realidad
     # el tamaño lo fijó un multiplicador de 0.45 es mentirle al usuario sobre
-    # por qué su posición es del tamaño que es.
+    # por qué su posición es del tamaño que es. La etiqueta es neutra
+    # ('multiplicador', no 'regime') a propósito: desde el Prompt 5 aquí llega
+    # el COMBINADO de régimen ∩ señales, y atribuirle al régimen un recorte de
+    # las señales era la misma mentira con otro nombre.
     if mult < 1.0:
-        binding = f"regime_multiplier({mult:.2f})"
+        binding = f"multiplicador({mult:.2f})"
 
     notes: list[str] = [
         f"Vol realizada anualizada: {vol_annual:.1%}.",
@@ -99,7 +102,10 @@ def size_crypto_sleeve(
     ]
 
     if regime_multiplier < 1.0:
-        notes.append(f"Escalado por régimen: x{regime_multiplier:.2f}.")
+        notes.append(
+            f"Escalado por multiplicador (régimen y señales, el que más apriete):"
+            f" x{regime_multiplier:.2f}."
+        )
 
     if w < floor:
         notes.append(

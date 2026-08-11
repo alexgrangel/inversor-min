@@ -805,8 +805,16 @@ def _regimen_cambiado(
     else:
         titulo = f"Régimen cambió en {len(cambios)} activos"
     razones = [f"{sym}: régimen {antes} → {ahora}." for sym, antes, ahora in cambios]
-    mult = _num(current.sizing, "regime_multiplier")
-    mult_prev = _num(previous.sizing, "regime_multiplier")
+    # El multiplicador APLICADO al sleeve es el combinado (régimen ∩ señales,
+    # desde 3.1.0). regime_multiplier quedó como el régimen puro; usarlo aquí
+    # decía "tu tamaño permitido subió" cuando las señales lo tenían atado.
+    # Fallback al campo viejo para snapshots previos a 3.1.0.
+    mult = _num(current.sizing, "combined_multiplier")
+    if mult is None:
+        mult = _num(current.sizing, "regime_multiplier")
+    mult_prev = _num(previous.sizing, "combined_multiplier")
+    if mult_prev is None:
+        mult_prev = _num(previous.sizing, "regime_multiplier")
     if mult is not None and mult_prev is not None:
         razones.append(
             f"Multiplicador de tamaño combinado (el mínimo del sleeve): {mult_prev:.2f} →"

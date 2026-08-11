@@ -364,12 +364,25 @@ def combinar(
 
 def _fuente_de_caida(renglon: str) -> str:
     """
-    La fuente de un renglón de caída: el texto antes del primer ':'. dvol_btc
-    y dvol_eth colapsan a 'dvol' porque alimentan el mismo slot del combinador
-    (el recolector etiqueta 'dvol_btc: ...' y el slot en None 'dvol...').
+    La fuente de un renglón de caída, para contar fuentes ÚNICAS.
+
+    - dvol_btc y dvol_eth colapsan a 'dvol': alimentan el mismo slot del
+      combinador (el recolector etiqueta 'dvol_btc: ...' y el slot en None
+      'dvol...'). Una fuente real, dos renglones posibles.
+    - 'rss:<feed>: ...' conserva la identidad del FEED ('rss:expansion'):
+      Expansión, El Financiero y Bloomberg Línea son tres fuentes distintas y
+      colapsarlas a 'rss' leía dos feeds caídos como una sola ceguera — la
+      cobertura del bloqueo regulatorio se degradaba a un tercio sin recorte
+      (regla 8: dos fuentes ciegas recortan).
     """
-    etiqueta = str(renglon).split(":", 1)[0].strip().casefold()
-    return "dvol" if etiqueta.startswith("dvol") else etiqueta
+    texto = str(renglon).strip().casefold()
+    partes = texto.split(":")
+    etiqueta = partes[0].strip()
+    if etiqueta.startswith("dvol"):
+        return "dvol"
+    if etiqueta == "rss" and len(partes) > 1 and partes[1].strip():
+        return f"rss:{partes[1].strip()}"
+    return etiqueta
 
 
 def _como_lista(x: Any) -> list[Any]:

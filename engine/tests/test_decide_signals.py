@@ -78,10 +78,32 @@ def test_regla8_ninguna_senal_aumenta_el_peso_sobre_decide_completo():
             assert d.sizing["combined_multiplier"] <= d.sizing["regime_multiplier"] + 1e-12
 
 
+def test_las_senales_de_verdad_reducen_el_sleeve():
+    # Mata al mutante que calcula y REPORTA el combinado pero dimensiona con
+    # el régimen puro: el test de la regla 8 es unilateral (<=) y ese mutante
+    # pasaba la suite entera. Aquí las señales aprietan a la mitad del régimen
+    # y el sleeve tiene que encogerse ESTRICTAMENTE.
+    base = decide(Policy(), obs(), _closes(), today=HOY)
+    regimen = base.sizing["regime_multiplier"]
+    assert _peso_cripto_mxn(base) > 0
+
+    st = SignalState(multiplicador=regimen / 2)
+    d = decide(Policy(), obs(), _closes(), today=HOY, signal_state=st)
+    assert _peso_cripto_mxn(d) < _peso_cripto_mxn(base)
+    assert d.sizing["weight_mxn"] < base.sizing["weight_mxn"]
+    # Y la atribución es honesta: manda el "multiplicador" (neutro), no un
+    # "régimen" cargando con un recorte que vino de las señales.
+    assert d.sizing["binding_constraint"].startswith(("multiplicador(", "below_floor"))
+
+
 def test_composicion_es_minimo_no_producto():
     base = decide(Policy(), obs(), _closes(), today=HOY)
     regimen = base.sizing["regime_multiplier"]
     assert 0.0 < regimen <= 1.0
+    # Guard del fixture: con régimen >= 0.7 las aserciones de abajo dejan de
+    # distinguir mínimo de producto y el test se vuelve vacuo. Si esto truena,
+    # cambió el fixture sintético: rediseña el test, no lo borres.
+    assert regimen < 0.7
 
     # Señales MENOS restrictivas que el régimen: el mínimo es el régimen y el
     # producto sería menor. Si alguien "arregla" aplicar() a producto, el
@@ -153,6 +175,91 @@ def test_fuente_apagada_no_es_ceguera_pero_tampoco_calma():
     assert not any("volumen_noticias" in f for f in st.fuentes_no_disponibles)
 
 
+def test_ruptura_apagada_por_bandera_tampoco_es_ceguera():
+    # La rama gemela de la anterior: ruptura_estructural=None + apagada. Sin
+    # cobertura propia, anular sólo esa rama sobrevivía a toda la suite.
+    st = combinar(
+        fear_greed=_lectura("fear_greed", 60.0), dvol=_lectura("dvol_btc", 45.0),
+        vix=_lectura("vix", 15.0),
+        volumen=None, ruptura=None,
+        apagadas=["volumen_noticias", "ruptura_estructural"], hoy=HOY,
+    )
+    assert st.multiplicador == pytest.approx(1.0)
+    assert not any("ruptura_estructural" in f for f in st.fuentes_no_disponibles)
+    assert sum("apagada" in r for r in st.razones) == 2
+
+
+def test_feeds_rss_distintos_cuentan_como_fuentes_distintas():
+    # Regresión de la revisión: 'rss:expansion: ...' y 'rss:el_financiero: ...'
+    # colapsaban a la llave 'rss' y dos feeds reales caídos no recortaban —
+    # la cobertura del bloqueo regulatorio se degradaba a un tercio leyéndose
+    # como calma (regla 8). El HANDOFF los lista como fuentes distintas.
+    sanas = dict(
+        fear_greed=_lectura("fear_greed", 60.0), dvol=_lectura("dvol_btc", 45.0),
+        vix=_lectura("vix", 15.0),
+        volumen=None,
+        ruptura=nw.RupturaEstructural(True, False, (), ("bloomberg_linea",), 12, ""),
+        apagadas=["volumen_noticias"], hoy=HOY,
+    )
+    un_feed = combinar(**sanas, fuentes_no_disponibles=["rss:expansion: HTTP 500"])
+    assert un_feed.multiplicador == pytest.approx(1.0)
+
+    dos_feeds = combinar(
+        **sanas,
+        fuentes_no_disponibles=[
+            "rss:expansion: HTTP 500",
+            "rss:el_financiero: URLError: timeout",
+        ],
+    )
+    assert dos_feeds.multiplicador == pytest.approx(0.60)
+
+
+def test_rancio_y_ruptura_el_mismo_dia_conserva_ambos_en_el_snapshot():
+    # Interacción 1/1b: antes, el retorno por rancidez tiraba el SignalState
+    # completo y una detección regulatoria ya pagada desaparecía del log
+    # walk-forward ese día. La ruptura manda como acción; la rancidez queda
+    # listada; las señales quedan en el snapshot.
+    from inversor.sources.banxico import Observation
+
+    o = obs()
+    o["inpc_anual"] = Observation("inpc_anual", "TEST", 3.12, date(2026, 1, 1), 221)
+    c = nw.Coincidencia(
+        etiqueta="CNBV cambia el estatus de activos virtuales o de una plataforma",
+        fuente="expansion", titulo="La CNBV suspende operaciones", url="u", fecha=HOY,
+        terminos=("cnbv",),
+    )
+    st = combinar(
+        ruptura=nw.RupturaEstructural(True, True, (c,), ("expansion",), 10, ""),
+        apagadas=["volumen_noticias"], hoy=HOY,
+    )
+    d = decide(Policy(), o, _closes(), today=HOY, signal_state=st)
+    assert d.action == "BLOCKED_STRUCTURAL_BREAK"
+    assert any("RUPTURA ESTRUCTURAL" in b for b in d.blockers)
+    assert any("inpc_anual" in b for b in d.blockers)
+    assert d.signals != {}
+    assert d.hurdle == {} and d.allocation_mxn == {}
+
+
+def test_ruptura_con_datos_frescos_conserva_el_contexto_de_mercado():
+    # Regla 10: el venue va al snapshot también en días de ruptura.
+    c = nw.Coincidencia(
+        etiqueta="SAT publica criterio o regla sobre activos virtuales",
+        fuente="expansion", titulo="SAT publica criterio sobre activos virtuales",
+        url="u", fecha=HOY, terminos=("sat",),
+    )
+    st = combinar(
+        ruptura=nw.RupturaEstructural(True, True, (c,), ("expansion",), 10, ""),
+        apagadas=["volumen_noticias"], hoy=HOY,
+    )
+    d = decide(
+        Policy(), obs(), _closes(), today=HOY,
+        venues={"BTC": "kraken", "ETH": "kraken"}, signal_state=st,
+    )
+    assert d.action == "BLOCKED_STRUCTURAL_BREAK"
+    assert d.market.get("venues") == {"BTC": "kraken", "ETH": "kraken"}
+    assert d.hurdle == {} and d.sizing == {}
+
+
 def test_una_fuente_caida_dos_renglones_no_dispara_el_recorte():
     # El recolector reporta 'vix: FRED caído' Y el slot en None agrega
     # 'vix: sin dato.': una sola fuente real, dos renglones. El umbral cuenta
@@ -217,3 +324,39 @@ def test_snapshot_previo_301_sin_campos_aditivos_rehidrata(tmp_path):
     previo = _load_previous_decision(tmp_path, d)
     assert previo is not None
     assert previo.signals == {} and previo.eventos == {}
+
+
+def test_snapshot_300_corrupto_sin_campos_propios_si_truena(tmp_path):
+    # Un 3.0.0 al que le falta 'blockers' no es "de un minor viejo": está
+    # corrupto — 3.0.0 SIEMPRE escribió blockers. Sólo se perdonan los campos
+    # que los minors posteriores agregaron (signals, eventos), nada más.
+    from inversor.__main__ import _load_previous_decision
+
+    d = decide(Policy(), obs(), _closes(), today=HOY)
+    viejo = d.to_json_dict()
+    viejo["schema_version"] = "3.0.0"
+    del viejo["signals"]
+    del viejo["eventos"]
+    del viejo["blockers"]
+    (tmp_path / "latest.json").write_text(
+        json.dumps(viejo, ensure_ascii=False), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="blockers"):
+        _load_previous_decision(tmp_path, d)
+
+
+def test_schema_version_ilegible_no_mata_la_corrida(tmp_path, capsys):
+    # Esto corre ANTES de write_snapshot: tronar por un latest.json editado a
+    # mano costaría el snapshot de HOY. Ilegible = no comparable = primera
+    # corrida efectiva, con nota en stderr.
+    from inversor.__main__ import _load_previous_decision
+
+    d = decide(Policy(), obs(), _closes(), today=HOY)
+    for version_rota in ("3", "3.x.0"):
+        viejo = d.to_json_dict()
+        viejo["schema_version"] = version_rota
+        (tmp_path / "latest.json").write_text(
+            json.dumps(viejo, ensure_ascii=False), encoding="utf-8"
+        )
+        assert _load_previous_decision(tmp_path, d) is None
+        assert "ilegible" in capsys.readouterr().err

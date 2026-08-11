@@ -129,33 +129,42 @@ def decide(
                 f"precio {sym} ({venue}): {edad} días de antigüedad"
                 f" (límite {policy.max_staleness_days})."
             )
-    if stale:
-        d.action = "BLOCKED_STALE_DATA"
-        d.blockers.extend(stale)
-        d.headline = "Datos rancios. No se emite recomendación ni se calcula nada más."
-        return d
-
     # ---------- 1b. Señales de estrés y noticias ----------
-    # Las señales sólo pueden REDUCIR el tamaño o BLOQUEAR (regla 8). El
-    # multiplicador se compone más abajo, en el paso 3; aquí entran al
-    # snapshot, las fuentes caídas a warnings, y la ruptura estructural
-    # bloquea ANTES de calcular nada: invalida el MODELO (fiscal/regulatorio),
-    # no el precio — nada de lo que sigue sobrevive a eso.
+    # Las señales entran al snapshot ANTES de cualquier compuerta: son
+    # observaciones ya recolectadas de fuentes independientes de Banxico, y
+    # tirarlas en un día rancio hacía desaparecer del log walk-forward una
+    # detección de ruptura regulatoria ya pagada. Sólo pueden REDUCIR el
+    # tamaño o BLOQUEAR (regla 8); el multiplicador se compone en el paso 3.
+    ruptura_detectada = signal_state is not None and bool(signal_state.blockers)
     if signal_state is not None:
         d.signals = signal_state.to_json_dict()
         d.warnings.extend(
             f"Señales — fuente no disponible: {f}"
             for f in signal_state.fuentes_no_disponibles
         )
-        if signal_state.blockers:
-            d.action = "BLOCKED_STRUCTURAL_BREAK"
+        if ruptura_detectada:
             d.blockers.extend(signal_state.blockers)
+
+    if stale or ruptura_detectada:
+        d.blockers.extend(stale)
+        if ruptura_detectada:
+            # La ruptura manda sobre la rancidez: lo que está en duda es el
+            # MODELO (fiscal/regulatorio), no un dato viejo, y exige revisión
+            # humana. Los bloqueos de rancidez quedan listados igual.
+            d.action = "BLOCKED_STRUCTURAL_BREAK"
             d.headline = (
                 "Ruptura estructural detectada. Lo que está en duda es el modelo"
                 " (fiscal o regulatorio), no el precio. Revisión humana antes de"
                 " operar; ningún multiplicador resuelve esto."
             )
+        else:
+            d.action = "BLOCKED_STALE_DATA"
+            d.headline = "Datos rancios. No se emite recomendación ni se calcula nada más."
+        if stale:
             return d
+        # Ruptura con datos frescos: se publica también el contexto de mercado
+        # (regla 10: el venue va al snapshot) antes de retornar, sin calcular
+        # nada derivado.
 
     fix = obs["fix_usdmxn"].value
     inflation = obs["inpc_anual"].value / 100.0
@@ -172,6 +181,11 @@ def decide(
         # discontinuidad en los datos, no un detalle de infraestructura.
         "venues": dict(venues or {}),
     }
+
+    if ruptura_detectada:
+        # Nada derivado se calcula bajo ruptura: ni hurdle, ni sizing, ni
+        # asignación. El snapshot conserva señales, frescura y mercado.
+        return d
 
     # ---------- 2. Hurdle ----------
     # TODAS las tasas de aquí para abajo son ANUALIZADAS. La conversión al
