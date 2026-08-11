@@ -1,8 +1,9 @@
 # android/ — cliente read-only
 
-App de tres pantallas que lee `snapshots/latest.json` de un repo público de
-GitHub y lo renderiza. **No opera, no guarda llaves, no tiene backend, no tiene
-login, no manda telemetría.** Un solo permiso: `INTERNET`.
+App de cuatro pantallas que lee `snapshots/latest.json` y
+`snapshots/notifications-latest.json` de un repo público de GitHub y los
+renderiza. **No opera, no guarda llaves, no tiene backend, no tiene login, no
+manda telemetría.** Un solo permiso: `INTERNET`.
 
 > **Esta app NO se publica en Play Store.** Es de uso personal, se instala por
 > sideload en tu propio dispositivo. Distribuirla cambiaría el perímetro
@@ -56,6 +57,26 @@ gradle wrapper --gradle-version 8.9
 
 O simplemente abre la carpeta `android/` en Android Studio (Ladybug o posterior)
 y deja que sincronice: crea el wrapper y descarga el SDK solo.
+
+### Los tres riesgos conocidos de primer compile
+
+Verificados en un primer build real (11-ago-2026, Mac limpio sin Android
+Studio):
+
+1. **No hay Java en el PATH.** `gradle` y el wrapper truenan con "Unable to
+   locate a Java Runtime" antes de decir nada útil. Instala JDK 17 y exporta
+   `JAVA_HOME` (Homebrew: `brew install openjdk@17`,
+   `export JAVA_HOME=/opt/homebrew/opt/openjdk@17`).
+2. **No hay `sdk.dir`.** Sin Android Studio, AGP no encuentra el SDK. Crea
+   `android/local.properties` con `sdk.dir=<ruta del SDK>` (con
+   `brew install android-commandlinetools`: la ruta es
+   `/opt/homebrew/share/android-commandlinetools`) e instala los paquetes:
+   `sdkmanager --licenses`, luego
+   `sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"`.
+   `local.properties` está gitignoreado; no lo commitees.
+3. **La primera descarga es grande y lenta.** El wrapper baja Gradle 8.9, AGP
+   8.7.3 y todo Compose (~1-2 GB con el SDK). Si el build "se cuelga", está
+   descargando; los siguientes builds son incrementales y rápidos.
 
 ---
 
@@ -134,6 +155,19 @@ engine debajo. Nada se recorta ni se abrevia.
 repo vía la contents API de GitHub; al tocar un día se descarga ese JSON y se
 muestra su acción, su headline y sus números clave.
 
+**Avisos** — `snapshots/notifications-latest.json`: los avisos de la última
+corrida con su razonamiento y su estrategia completos. Dos cosas de esta
+pantalla no son decoración:
+
+- **Un aviso con `es_orden_ejecutable` lleva una marca imposible de no ver**
+  (banda roja). Es la salida más cara del sistema: cuenta contra el presupuesto
+  anual de avisos operables, que se DERIVA del presupuesto de comisiones
+  (regla 9 del repo).
+- **Los suprimidos se muestran, colapsados.** Ver qué NO se te avisó y por qué
+  (cooldown, histéresis, presupuesto) es parte de poder confiar en el
+  silencio. Y el silencio mismo se dice con todas sus letras: "sin cambios de
+  estado" es la salida esperada, no una lista vacía.
+
 ---
 
 ## 6. Frescura del dato: cómo se comporta
@@ -181,7 +215,9 @@ android/
       util/Freshness.kt                staleness y versión de esquema
       ui/theme/                        Material 3, claro y oscuro
       ui/components/                   chip de acción, tablas, banners
-      ui/screens/                      TodayScreen, WhyScreen, HistoryScreen
+      ui/screens/                      TodayScreen, WhyScreen, HistoryScreen,
+                                       AvisosScreen
+      data/NotificationsDto.kt         espejo de notifications-latest.json
     src/test/                          tests JVM (sin emulador, sin red)
     src/test/resources/latest.json     copia literal del snapshot real
 ```

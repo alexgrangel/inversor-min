@@ -34,14 +34,53 @@ data class SnapshotDto(
     val hurdle: HurdleDto? = null,
     val sizing: SizingDto? = null,
     val costs: CostsDto? = null,
-    // Claves dinámicas: "reserva_liquidez", "BTCUSDT", "ETHUSDT", "CETES_364d".
-    // El orden de inserción del JSON se conserva (LinkedHashMap).
+    // Claves dinámicas: "reserva_liquidez", "BTC", "ETH", "CETES_364d"
+    // (canónicos desde 3.0.0). El orden de inserción del JSON se conserva.
     @SerialName("allocation_mxn") val allocationMxn: Map<String, Double> = emptyMap(),
     @SerialName("required_returns") val requiredReturns: RequiredReturnsDto? = null,
     val fx: FxDto? = null,
-    // Claves dinámicas: "fix_usdmxn", "cetes_28", ..., "inpc_anual".
+    // Claves dinámicas: "fix_usdmxn", "cetes_28", ..., "precio_BTC", "precio_ETH".
     @SerialName("data_freshness") val dataFreshness: Map<String, FreshnessDto> = emptyMap(),
+    // Aditivos del 3.1.0: señales de estrés/noticias y calendario de eventos.
+    val signals: SignalsDto? = null,
+    val eventos: EventosDto? = null,
     val policy: PolicyDto? = null,
+)
+
+@Serializable
+data class SignalsDto(
+    val multiplicador: Double,
+    val blockers: List<String> = emptyList(),
+    val razones: List<String> = emptyList(),
+    @SerialName("fuentes_no_disponibles") val fuentesNoDisponibles: List<String> = emptyList(),
+)
+
+@Serializable
+data class EventosDto(
+    @SerialName("ventana_dias") val ventanaDias: Int,
+    val proximos: List<EventoDto> = emptyList(),
+    @SerialName("escenarios_banxico") val escenariosBanxico: List<EscenarioBanxicoDto> = emptyList(),
+)
+
+@Serializable
+data class EventoDto(
+    val fecha: String,
+    val tipo: String,
+    val nombre: String,
+    val fuente: String,
+    val verificado: Boolean,
+    @SerialName("fecha_fin") val fechaFin: String? = null,
+    val nota: String = "",
+)
+
+@Serializable
+data class EscenarioBanxicoDto(
+    @SerialName("movimiento_bp") val movimientoBp: Int,
+    val etiqueta: String,
+    @SerialName("hurdle_anualizado") val hurdleAnualizado: Double,
+    @SerialName("sleeve_objetivo_mxn") val sleeveObjetivoMxn: Double,
+    @SerialName("delta_sleeve_mxn") val deltaSleeveMxn: Double,
+    val restriccion: String,
 )
 
 @Serializable
@@ -53,6 +92,9 @@ data class MarketDto(
     @SerialName("tasa_objetivo") val tasaObjetivo: Double? = null,
     // Claves: "28", "91", "182", "364" (días).
     @SerialName("cetes_curve") val cetesCurve: Map<String, Double> = emptyMap(),
+    // 3.0.0: qué venue sirvió cada precio ("BTC" -> "kraken"). Un cambio de
+    // fuente es una discontinuidad en los datos y la UI debe poder mostrarlo.
+    val venues: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -94,7 +136,12 @@ data class SizingDto(
     @SerialName("implied_portfolio_vol") val impliedPortfolioVol: Double,
     @SerialName("implied_worst_case_loss_mxn") val impliedWorstCaseLossMxn: Double,
     val notes: List<String> = emptyList(),
+    /** Régimen puro (SMA/vol). Desde 3.1.0 ya NO es el multiplicador aplicado. */
     @SerialName("regime_multiplier") val regimeMultiplier: Double,
+    /** Multiplicador de señales (null si la capa de señales no corrió). */
+    @SerialName("signals_multiplier") val signalsMultiplier: Double? = null,
+    /** El que de verdad dimensionó el sleeve: min(régimen, señales). */
+    @SerialName("combined_multiplier") val combinedMultiplier: Double? = null,
     val regimes: List<RegimeDto> = emptyList(),
     // Sólo existe cuando la decisión llegó al paso 5b del engine.
     val materiality: MaterialityDto? = null,

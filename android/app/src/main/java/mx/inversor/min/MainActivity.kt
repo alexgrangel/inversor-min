@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,6 +46,7 @@ import mx.inversor.min.data.SnapshotDto
 import mx.inversor.min.ui.components.CacheBanner
 import mx.inversor.min.ui.components.StaleBanner
 import mx.inversor.min.ui.components.loadErrorText
+import mx.inversor.min.ui.screens.AvisosScreen
 import mx.inversor.min.ui.screens.HistoryScreen
 import mx.inversor.min.ui.screens.TodayScreen
 import mx.inversor.min.ui.screens.UpdateRequiredScreen
@@ -68,6 +70,8 @@ class MainActivity : ComponentActivity() {
                     onRefresh = viewModel::refresh,
                     onLoadHistory = viewModel::loadHistoryIfNeeded,
                     onSelectDay = viewModel::selectDay,
+                    onLoadAvisos = viewModel::loadAvisosIfNeeded,
+                    onRetryAvisos = viewModel::refreshAvisos,
                 )
             }
         }
@@ -77,6 +81,7 @@ class MainActivity : ComponentActivity() {
 private const val TAB_TODAY = 0
 private const val TAB_WHY = 1
 private const val TAB_HISTORY = 2
+private const val TAB_AVISOS = 3
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +90,8 @@ fun AppRoot(
     onRefresh: () -> Unit,
     onLoadHistory: () -> Unit,
     onSelectDay: (HistoryEntry) -> Unit,
+    onLoadAvisos: () -> Unit,
+    onRetryAvisos: () -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf(TAB_TODAY) }
     val unsupported = state.unsupportedSchemaVersion
@@ -124,6 +131,12 @@ fun AppRoot(
                         icon = { Icon(Icons.Filled.DateRange, contentDescription = null) },
                         label = { Text(stringResource(R.string.tab_history)) },
                     )
+                    NavigationBarItem(
+                        selected = tab == TAB_AVISOS,
+                        onClick = { tab = TAB_AVISOS },
+                        icon = { Icon(Icons.Filled.Notifications, contentDescription = null) },
+                        label = { Text(stringResource(R.string.tab_avisos)) },
+                    )
                 }
             }
         },
@@ -146,6 +159,11 @@ fun AppRoot(
                 }
 
                 when {
+                    tab == TAB_AVISOS -> AvisosScreen(
+                        avisos = state.avisos,
+                        onLoad = onLoadAvisos,
+                        onRetry = onRetryAvisos,
+                    )
                     snapshot == null -> EmptyState(state = state, onRefresh = onRefresh)
                     tab == TAB_TODAY -> TodayScreen(snapshot = snapshot)
                     tab == TAB_WHY -> WhyScreen(snapshot = snapshot)

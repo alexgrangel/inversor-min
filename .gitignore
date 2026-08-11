@@ -14,3 +14,9 @@ dist/
 android/local.properties
 android/app/build/
 android/build/
+
+# El wrapper de Gradle se genera localmente (android/README.md §2):
+# no se versionan binarios en este repo.
+android/gradlew
+android/gradlew.bat
+android/gradle/wrapper/gradle-wrapper.jar

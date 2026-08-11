@@ -21,6 +21,7 @@ data class HistoryEntry(
  */
 class SnapshotRepository(
     private val cache: LocalCache,
+    private val notificationsCache: LocalCache? = null,
     private val client: OkHttpClient = defaultClient(),
 ) {
 
@@ -38,6 +39,21 @@ class SnapshotRepository(
         val raw = get(AppConfig.latestUrl)
         val dto = SnapshotParser.parse(raw)
         cache.write(raw)
+        dto
+    }
+
+    /** Últimos avisos guardados, sin tocar la red. Null si no hay o no parsean. */
+    suspend fun cachedNotifications(): NotificationsLatestDto? = withContext(Dispatchers.IO) {
+        val raw = notificationsCache?.read() ?: return@withContext null
+        runCatching { NotificationsParser.parse(raw) }.getOrNull()
+    }
+
+    /** Descarga `snapshots/notifications-latest.json`. Mismo contrato que
+     *  [fetchLatest]: se parsea ANTES de escribir la caché. */
+    suspend fun fetchNotifications(): NotificationsLatestDto = withContext(Dispatchers.IO) {
+        val raw = get(AppConfig.notificationsUrl)
+        val dto = NotificationsParser.parse(raw)
+        notificationsCache?.write(raw)
         dto
     }
 

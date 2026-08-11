@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
 import mx.inversor.min.data.HistoryEntry
 import mx.inversor.min.data.LocalCache
+import mx.inversor.min.data.NotificationsLatestDto
 import mx.inversor.min.data.SnapshotDto
 import mx.inversor.min.data.SnapshotRepository
 import mx.inversor.min.util.isSchemaSupported
@@ -30,6 +31,13 @@ data class HistoryUi(
     val dayError: LoadError? = null,
 )
 
+data class AvisosUi(
+    val loading: Boolean = false,
+    val error: LoadError? = null,
+    val data: NotificationsLatestDto? = null,
+    val source: Source = Source.NONE,
+)
+
 data class UiState(
     /** true en cuanto se intentó leer la caché: evita el parpadeo inicial. */
     val booted: Boolean = false,
@@ -40,11 +48,15 @@ data class UiState(
     /** Versión del snapshot cuando su mayor no es el soportado. */
     val unsupportedSchemaVersion: String? = null,
     val history: HistoryUi = HistoryUi(),
+    val avisos: AvisosUi = AvisosUi(),
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val repository = SnapshotRepository(LocalCache(app.filesDir))
+    private val repository = SnapshotRepository(
+        cache = LocalCache(app.filesDir),
+        notificationsCache = LocalCache(app.filesDir, LocalCache.NOTIFICATIONS_FILE_NAME),
+    )
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -73,6 +85,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(refreshing = false) }
             }
         }
+        // Los avisos se refrescan junto con el snapshot una vez que la pantalla
+        // los pidió por primera vez: son el mismo commit del cron.
+        if (_state.value.avisos.data != null) refreshAvisos()
+    }
+
+    /** Carga perezosa al entrar a la pestaña Avisos: caché primero, luego red. */
+    fun loadAvisosIfNeeded() {
+        val avisos = _state.value.avisos
+        if (avisos.loading || avisos.data != null) return
+        viewModelScope.launch {
+            repository.cachedNotifications()?.let { cached ->
+                setAvisos { it.copy(data = cached, source = Source.CACHE) }
+            }
+            refreshAvisosInternal()
+        }
+    }
+
+    fun refreshAvisos() {
+        if (_state.value.avisos.loading) return
+        viewModelScope.launch { refreshAvisosInternal() }
+    }
+
+    private suspend fun refreshAvisosInternal() {
+        setAvisos { it.copy(loading = true, error = null) }
+        try {
+            val data = repository.fetchNotifications()
+            setAvisos { it.copy(data = data, source = Source.NETWORK, loading = false) }
+        } catch (e: IOException) {
+            setAvisos { it.copy(loading = false, error = LoadError.NETWORK) }
+        } catch (e: SerializationException) {
+            setAvisos { it.copy(loading = false, error = LoadError.PARSE) }
+        }
+    }
+
+    private fun setAvisos(transform: (AvisosUi) -> AvisosUi) {
+        _state.update { it.copy(avisos = transform(it.avisos)) }
     }
 
     fun loadHistoryIfNeeded() {

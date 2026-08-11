@@ -11,7 +11,7 @@ plugins {
 // De aquí salen las dos URLs:
 //   https://raw.githubusercontent.com/<repo>/main/snapshots/latest.json
 //   https://api.github.com/repos/<repo>/contents/snapshots?ref=main
-val snapshotRepo = "OWNER/REPO"
+val snapshotRepo = "alexgrangel/inversor-min"
 // ─────────────────────────────────────────────────────────────────────────────
 
 android {

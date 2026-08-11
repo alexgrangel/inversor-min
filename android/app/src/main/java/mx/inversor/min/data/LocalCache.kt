@@ -10,9 +10,9 @@ import java.io.IOException
  * Se guarda el texto crudo, no el objeto: si mañana el DTO cambia, el crudo
  * sigue siendo la verdad y se vuelve a parsear con las reglas nuevas.
  */
-class LocalCache(dir: File) {
+class LocalCache(dir: File, fileName: String = FILE_NAME) {
 
-    private val file = File(dir, FILE_NAME)
+    private val file = File(dir, fileName)
 
     /** Texto crudo del último snapshot bueno, o null si no hay caché. */
     fun read(): String? {
@@ -41,7 +41,8 @@ class LocalCache(dir: File) {
         }
     }
 
-    private companion object {
+    companion object {
         const val FILE_NAME = "latest_snapshot.json"
+        const val NOTIFICATIONS_FILE_NAME = "latest_notifications.json"
     }
 }

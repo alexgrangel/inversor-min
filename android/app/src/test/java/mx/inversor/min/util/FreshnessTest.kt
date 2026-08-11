@@ -22,8 +22,8 @@ class FreshnessTest {
 
     private fun snapshot(raw: String = rawJson()): SnapshotDto = SnapshotParser.parse(raw)
 
-    /** generated_at del snapshot de prueba. */
-    private val generatedAt: Instant = Instant.parse("2026-08-10T03:28:01.658146Z")
+    /** generated_at del snapshot de prueba (copia real del 11-ago-2026). */
+    private val generatedAt: Instant = Instant.parse("2026-08-11T02:43:04.378265Z")
 
     @Test
     fun `snapshot reciente y sin series rancias no dispara el banner`() {
@@ -66,10 +66,12 @@ class FreshnessTest {
         val raw = rawJson().replace("\"stale\": false", "\"stale\": true")
         val s = evaluateStaleness(snapshot(raw), generatedAt.plusSeconds(60))
         assertTrue(s.isStale)
+        // 3.0.0: data_freshness también trae los precios cripto con su venue.
         assertEquals(
             listOf(
                 "cetes_182", "cetes_28", "cetes_364", "cetes_91",
-                "fix_usdmxn", "inpc_anual", "tasa_objetivo",
+                "fix_usdmxn", "inpc_anual", "precio_BTC", "precio_ETH",
+                "tasa_objetivo",
             ),
             s.staleSeries,
         )
@@ -78,7 +80,7 @@ class FreshnessTest {
     @Test
     fun `generated_at ilegible se trata como rancio`() {
         val raw = rawJson().replace(
-            "\"generated_at\": \"2026-08-10T03:28:01.658146+00:00\"",
+            "\"generated_at\": \"2026-08-11T02:43:04.378265+00:00\"",
             "\"generated_at\": \"anoche\"",
         )
         val s = evaluateStaleness(snapshot(raw), generatedAt)
@@ -108,11 +110,13 @@ class FreshnessTest {
     }
 
     @Test
-    fun `solo el mayor uno es compatible con esta app`() {
-        assertTrue(isSchemaSupported("1.0.0"))
-        assertTrue(isSchemaSupported("1.4.12"))
+    fun `solo el mayor tres es compatible con esta app`() {
+        assertTrue(isSchemaSupported("3.0.0"))
+        assertTrue(isSchemaSupported("3.1.0"))
+        assertTrue(isSchemaSupported("3.4.12"))
+        assertFalse(isSchemaSupported("1.0.0"))
         assertFalse(isSchemaSupported("2.0.0"))
-        assertFalse(isSchemaSupported("0.9.0"))
+        assertFalse(isSchemaSupported("4.0.0"))
         assertFalse(isSchemaSupported("basura"))
     }
 

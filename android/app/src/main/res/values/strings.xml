@@ -6,6 +6,7 @@
     <string name="tab_today">Hoy</string>
     <string name="tab_why">Por qué</string>
     <string name="tab_history">Historial</string>
+    <string name="tab_avisos">Avisos</string>
     <string name="cd_refresh">Actualizar</string>
 
     <!-- Acciones del motor -->
@@ -100,6 +101,19 @@
     <string name="col_fx_scenario">Movimiento MXN</string>
     <string name="col_fx_required">Rendimiento USD requerido</string>
     <string name="why_fx_caption">El cálculo es multiplicativo, no una resta. Si el peso se aprecia, el rendimiento que necesitas en dólares sube más que proporcionalmente: esos son los números grandes de la tabla y se muestran completos.</string>
+
+    <!-- Pantalla 4: Avisos -->
+    <string name="avisos_generated">Corrida: %1$s</string>
+    <string name="avisos_none_title">Sin cambios de estado. Nada que avisar.</string>
+    <string name="avisos_none_body">Este motor sólo avisa de transiciones de la decisión, nunca de niveles ni de "oportunidades". El silencio es el resultado esperado y el más frecuente.</string>
+    <string name="avisos_orders_none">%1$d aviso(s). Ninguno contiene una orden que cueste comisiones.</string>
+    <string name="avisos_orders_some">%1$d aviso(s). %2$d carga(n) una orden ejecutable.</string>
+    <string name="avisos_executable_badge">⚠ CARGA ORDEN EJECUTABLE</string>
+    <string name="avisos_why">Por qué</string>
+    <string name="avisos_what">Qué hacer</string>
+    <string name="avisos_suppressed_title">Suprimidos (%1$d)</string>
+    <string name="avisos_suppressed_caption">Lo que el anti-spam silenció y por qué. Ver qué NO se te avisó es parte de poder confiar en el silencio.</string>
+    <string name="avisos_suppressed_empty">Nada suprimido en la última corrida.</string>
 
     <!-- Pantalla 3: Historial -->
     <string name="history_title">Bitácora walk-forward</string>

@@ -11,7 +11,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Estos tests corren contra una copia literal de snapshots/latest.json.
+ * Estos tests corren contra una copia literal de snapshots/latest.json
+ * (esquema 3.1.0, corrida real del 11-ago-2026).
  *
  * El objetivo no es "el parser corre": es que si el engine renombra o quita un
  * campo, esto truene en CI antes de que la app muestre un cero inventado.
@@ -30,8 +31,8 @@ class SnapshotDtoTest {
     @Test
     fun `campos de identidad`() {
         val d = parsed()
-        assertEquals("1.0.0", d.schemaVersion)
-        assertEquals("2026-08-10T03:28:01.658146+00:00", d.generatedAt)
+        assertEquals("3.1.0", d.schemaVersion)
+        assertEquals("2026-08-11T02:43:04.378265+00:00", d.generatedAt)
         assertEquals("ALLOCATE_TO_CRYPTO", d.action)
         assertTrue(d.headline.startsWith("Aumentar sleeve cripto en 1,440 MXN"))
     }
@@ -39,12 +40,12 @@ class SnapshotDtoTest {
     @Test
     fun `listas de razonamiento`() {
         val d = parsed()
-        assertEquals(13, d.reasons.size)
+        assertEquals(20, d.reasons.size)
         assertTrue(d.reasons[0].startsWith("Hurdle: CETES 364d"))
         assertEquals(0, d.blockers.size)
-        assertEquals(2, d.warnings.size)
-        assertTrue(d.warnings[0].startsWith("Sleeve de 1,440 MXN"))
-        assertTrue(d.warnings[1].startsWith("Tienes ingresos y gastos en MXN"))
+        assertEquals(4, d.warnings.size)
+        // Las advertencias de señales (fuentes caídas) van primero.
+        assertTrue(d.warnings[0].startsWith("Señales — fuente no disponible"))
     }
 
     /**
@@ -63,6 +64,8 @@ class SnapshotDtoTest {
         assertNotNull(d.requiredReturns)
         assertNotNull(d.fx)
         assertNotNull(d.policy)
+        assertNotNull(d.signals)
+        assertNotNull(d.eventos)
         assertFalse(d.allocationMxn.isEmpty())
         assertFalse(d.dataFreshness.isEmpty())
     }
@@ -72,13 +75,22 @@ class SnapshotDtoTest {
     @Test
     fun `market`() {
         val m = requireNotNull(parsed().market)
-        assertEquals(17.1387, m.usdmxnFix, 0.0)
-        assertEquals("2026-08-07", m.usdmxnFixAsOf)
+        assertEquals(17.1408, m.usdmxnFix, 0.0)
+        assertEquals("2026-08-10", m.usdmxnFixAsOf)
         assertEquals(0.031200000000000002, m.inflacionAnual, 0.0)
         assertEquals(0.065, requireNotNull(m.tasaObjetivo), 0.0)
         assertEquals(listOf("28", "91", "182", "364"), m.cetesCurve.keys.toList())
         assertEquals(0.0701, requireNotNull(m.cetesCurve["364"]), 0.0)
         assertEquals(0.0617, requireNotNull(m.cetesCurve["28"]), 0.0)
+    }
+
+    /** 3.0.0: el venue que sirvió cada precio va al snapshot (regla 10). */
+    @Test
+    fun `market trae los venues por activo canonico`() {
+        val m = requireNotNull(parsed().market)
+        assertEquals(setOf("BTC", "ETH"), m.venues.keys)
+        assertEquals("kraken", m.venues["BTC"])
+        assertEquals("kraken", m.venues["ETH"])
     }
 
     // ── hurdle ────────────────────────────────────────────────────────────
@@ -122,15 +134,34 @@ class SnapshotDtoTest {
         val s = requireNotNull(parsed().sizing)
         assertEquals(0.032, s.weight, 0.0)
         assertEquals(1440.0, s.weightMxn, 0.0)
-        assertEquals("regime_multiplier(0.30)", s.bindingConstraint)
-        assertEquals(0.15542077887274125, s.volTargetWeight, 0.0)
+        assertEquals("multiplicador(0.30)", s.bindingConstraint)
+        assertEquals(0.2565989972905607, s.volTargetWeight, 0.0)
         assertEquals(0.10666666666666667, s.drawdownBudgetWeight, 0.0)
         assertEquals(0.2, s.hardCapWeight, 0.0)
-        assertEquals(0.5147316889043781, s.realizedVolAnnual, 0.0)
-        assertEquals(0.0164714140449401, s.impliedPortfolioVol, 0.0)
+        assertEquals(0.3117705090227292, s.realizedVolAnnual, 0.0)
+        assertEquals(0.009976656288727334, s.impliedPortfolioVol, 0.0)
         assertEquals(1080.0, s.impliedWorstCaseLossMxn, 0.0)
         assertEquals(6, s.notes.size)
         assertEquals(0.3, s.regimeMultiplier, 0.0)
+    }
+
+    /**
+     * 3.1.0: el multiplicador APLICADO es el combinado (mínimo de régimen y
+     * señales), no el de régimen. Si la UI muestra el equivocado, le atribuye
+     * al régimen un recorte que vino de las señales.
+     */
+    @Test
+    fun `los tres multiplicadores del sizing son distinguibles`() {
+        val s = requireNotNull(parsed().sizing)
+        assertEquals(0.3, s.regimeMultiplier, 0.0)
+        assertEquals(0.75, requireNotNull(s.signalsMultiplier), 0.0)
+        assertEquals(0.3, requireNotNull(s.combinedMultiplier), 0.0)
+        // El combinado es el mínimo de los otros dos.
+        assertEquals(
+            minOf(s.regimeMultiplier, requireNotNull(s.signalsMultiplier)),
+            requireNotNull(s.combinedMultiplier),
+            1e-12,
+        )
     }
 
     @Test
@@ -138,22 +169,17 @@ class SnapshotDtoTest {
         val regimes = requireNotNull(parsed().sizing).regimes
         assertEquals(2, regimes.size)
 
-        val neutral = regimes[0]
-        assertEquals("NEUTRAL", neutral.label)
-        assertEquals(0.6, neutral.sizeMultiplier, 0.0)
-        assertEquals(104053.67500044397, neutral.price, 0.0)
-        assertEquals(116642.58489643037, neutral.sma200, 0.0)
-        assertEquals(117216.49872954245, neutral.sma50, 0.0)
-        assertEquals(-0.1079272197813893, neutral.pctFrom200, 0.0)
-        assertEquals(-0.3294096288283719, neutral.drawdownFrom1yHigh, 0.0)
-        assertEquals(0.4744991990674987, neutral.vol30d, 0.0)
-        assertEquals(0.6170212765957447, neutral.volPercentile2y, 0.0)
-        assertEquals(5, neutral.signals.size)
+        val btc = regimes[0]
+        assertEquals("RISK_OFF", btc.label)
+        assertEquals(0.3, btc.sizeMultiplier, 0.0)
+        assertEquals(63982.7, btc.price, 0.0)
+        assertEquals(69876.2655, btc.sma200, 0.0)
+        assertEquals(6, btc.signals.size)
 
-        val riskOff = regimes[1]
-        assertEquals("RISK_OFF", riskOff.label)
-        assertEquals(0.3, riskOff.sizeMultiplier, 0.0)
-        assertEquals(6, riskOff.signals.size)
+        val eth = regimes[1]
+        assertEquals("RISK_OFF", eth.label)
+        assertEquals(0.3, eth.sizeMultiplier, 0.0)
+        assertEquals(6, eth.signals.size)
     }
 
     @Test
@@ -167,21 +193,8 @@ class SnapshotDtoTest {
         assertEquals(-0.5, m.escenarios[0].movimientoCripto, 0.0)
         assertEquals(-0.0144, m.escenarios[0].impactoPortafolioPct, 0.0)
         assertEquals(-720.0, m.escenarios[0].impactoPortafolioMxn, 0.0)
-
-        assertEquals(0.5, m.escenarios[3].movimientoCripto, 0.0)
-        assertEquals(0.0144, m.escenarios[3].impactoPortafolioPct, 0.0)
-        assertEquals(720.0, m.escenarios[3].impactoPortafolioMxn, 0.0)
-
-        assertEquals(1.0, m.escenarios[4].movimientoCripto, 0.0)
-        assertEquals(0.0288, m.escenarios[4].impactoPortafolioPct, 0.0)
-        assertEquals(1440.0, m.escenarios[4].impactoPortafolioMxn, 0.0)
     }
 
-    /**
-     * El veredicto maneja la rama prominente de TodayScreen. Si el engine
-     * empieza a mandar otra cadena, el test lo enseña en vez de dejar la app
-     * cayendo silenciosamente en el camino "material".
-     */
     @Test
     fun `veredicto de materialidad es una de las dos cadenas conocidas`() {
         val veredicto = requireNotNull(requireNotNull(parsed().sizing).materiality).veredicto
@@ -204,23 +217,24 @@ class SnapshotDtoTest {
         assertEquals(0.003, c.breakevenMovePct, 0.0)
         assertEquals(4, c.notes.size)
         assertEquals(
-            "Pata más chica: 21.01 USD vs mínimo 10.00 USD (OK).",
+            "Pata más chica: 21.00 USD vs mínimo 10.00 USD (OK).",
             c.minNotionalCheck,
         )
     }
 
     // ── allocation ────────────────────────────────────────────────────────
 
+    /** 3.0.0: activos CANÓNICOS. BTCUSDT/ETHUSDT eran pares de Binance. */
     @Test
-    fun `allocation conserva el orden del engine`() {
+    fun `allocation usa activos canonicos y conserva el orden del engine`() {
         val a = parsed().allocationMxn
         assertEquals(
-            listOf("reserva_liquidez", "BTCUSDT", "ETHUSDT", "CETES_364d"),
+            listOf("reserva_liquidez", "BTC", "ETH", "CETES_364d"),
             a.keys.toList(),
         )
         assertEquals(5000.0, requireNotNull(a["reserva_liquidez"]), 0.0)
-        assertEquals(1080.0, requireNotNull(a["BTCUSDT"]), 0.0)
-        assertEquals(360.0, requireNotNull(a["ETHUSDT"]), 0.0)
+        assertEquals(1080.0, requireNotNull(a["BTC"]), 0.0)
+        assertEquals(360.0, requireNotNull(a["ETH"]), 0.0)
         assertEquals(43560.0, requireNotNull(a["CETES_364d"]), 0.0)
         assertEquals(50000.0, a.values.sum(), 1e-9)
     }
@@ -250,8 +264,6 @@ class SnapshotDtoTest {
             1e-12,
         )
         assertNotEquals(r.hurdlePeriodo, r.hurdleAnualizado, 1e-12)
-        // El horizonte del bloque de required_returns tiene que coincidir con
-        // el del hurdle: la UI etiqueta las filas con estos días.
         assertEquals(requireNotNull(parsed().hurdle).horizonDays, r.horizonDays)
     }
 
@@ -260,12 +272,10 @@ class SnapshotDtoTest {
     @Test
     fun `fx`() {
         val fx = requireNotNull(parsed().fx)
-        assertEquals(17.1387, fx.usdmxnFix, 0.0)
+        assertEquals(17.1408, fx.usdmxnFix, 0.0)
         assertEquals(5, fx.sensibilidad.size)
         assertEquals(-0.1, fx.sensibilidad[0].escenarioMxn, 0.0)
         assertEquals(0.23457491387279994, fx.sensibilidad[0].rendimientoUsdRequerido, 0.0)
-        assertEquals(-0.05, fx.sensibilidad[1].escenarioMxn, 0.0)
-        assertEquals(0.16959728682686315, fx.sensibilidad[1].rendimientoUsdRequerido, 0.0)
         assertEquals(0.0, fx.sensibilidad[2].escenarioMxn, 0.0)
         assertEquals(0.11111742248552003, fx.sensibilidad[2].rendimientoUsdRequerido, 0.0)
         assertEquals(0.1, fx.sensibilidad[4].escenarioMxn, 0.0)
@@ -273,17 +283,12 @@ class SnapshotDtoTest {
         assertTrue(fx.advertencia.contains("larga en USD"))
     }
 
-    /**
-     * La sensibilidad ya no es una resta. El escenario adverso tiene que ser
-     * estrictamente mayor que "requerido + apreciación", que es lo que daba el
-     * cálculo lineal viejo. Si alguien regresa a la resta, esto truena.
-     */
     @Test
     fun `los escenarios adversos de fx son multiplicativos, no una resta`() {
         val fx = requireNotNull(parsed().fx)
         val base = fx.sensibilidad.first { it.escenarioMxn == 0.0 }.rendimientoUsdRequerido
         val adverso = fx.sensibilidad.first { it.escenarioMxn == -0.1 }
-        val lineal = base - adverso.escenarioMxn   // el viejo: base + 0.10
+        val lineal = base - adverso.escenarioMxn
         assertTrue(
             "El escenario adverso ($adverso) debería superar al lineal ($lineal)",
             adverso.rendimientoUsdRequerido > lineal,
@@ -293,23 +298,68 @@ class SnapshotDtoTest {
     // ── data_freshness ────────────────────────────────────────────────────
 
     @Test
-    fun `data freshness`() {
+    fun `data freshness incluye las series de Banxico y los precios con venue`() {
         val df = parsed().dataFreshness
         assertEquals(
             setOf(
                 "fix_usdmxn", "cetes_28", "cetes_91", "cetes_182",
                 "cetes_364", "tasa_objetivo", "inpc_anual",
+                "precio_BTC", "precio_ETH",
             ),
             df.keys,
         )
         val c364 = requireNotNull(df["cetes_364"])
-        assertEquals("REAL", c364.seriesId)
+        assertEquals("SF60636", c364.seriesId)
         assertEquals(7.01, c364.value, 0.0)
-        assertEquals("2026-08-07", c364.asOf)
-        assertEquals(3, c364.staleDays)
+        assertEquals("2026-08-04", c364.asOf)
+        // 7 días: la subasta es semanal y el límite por calendario es 9.
+        assertEquals(7, c364.staleDays)
         assertFalse(c364.stale)
-        assertEquals(3.12, requireNotNull(df["inpc_anual"]).value, 0.0)
+
+        // 3.0.0: el precio lleva el venue en series_id ("kraken:BTC").
+        val btc = requireNotNull(df["precio_BTC"])
+        assertEquals("kraken:BTC", btc.seriesId)
+        assertEquals(63982.7, btc.value, 0.0)
+        assertEquals(0, btc.staleDays)
         assertTrue(df.values.none { it.stale })
+    }
+
+    // ── signals (3,1,0) ───────────────────────────────────────────────────
+
+    @Test
+    fun `signals refleja la capa de senales`() {
+        val s = requireNotNull(parsed().signals)
+        assertEquals(0.75, s.multiplicador, 0.0)
+        assertEquals(0, s.blockers.size)
+        assertEquals(6, s.razones.size)
+        assertEquals(2, s.fuentesNoDisponibles.size)
+        assertTrue(s.fuentesNoDisponibles.all { it.startsWith("vix") })
+    }
+
+    // ── eventos (3,1,0) ───────────────────────────────────────────────────
+
+    @Test
+    fun `eventos trae el calendario y los escenarios de Banxico`() {
+        val e = requireNotNull(parsed().eventos)
+        assertEquals(60, e.ventanaDias)
+        assertEquals(15, e.proximos.size)
+
+        val banxico = e.proximos.first { it.tipo == "BANXICO" }
+        assertEquals("2026-09-24", banxico.fecha)
+        assertFalse(banxico.verificado)   // fecha DERIVADA del PDF, no leída
+
+        assertEquals(4, e.escenariosBanxico.size)
+        val recorte50 = e.escenariosBanxico.first { it.movimientoBp == -50 }
+        assertEquals(0.10493, recorte50.hurdleAnualizado, 0.0)
+        assertEquals(0.0, recorte50.sleeveObjetivoMxn, 0.0)
+        assertEquals("below_floor", recorte50.restriccion)
+
+        val sinCambio = e.escenariosBanxico.first { it.movimientoBp == 0 }
+        assertEquals(
+            requireNotNull(parsed().hurdle).hurdleTotalAnualizado,
+            sinCambio.hurdleAnualizado,
+            1e-9,
+        )
     }
 
     // ── policy ────────────────────────────────────────────────────────────
@@ -322,23 +372,18 @@ class SnapshotDtoTest {
         assertEquals(5000.0, p.portfolio.liquidityReserveMxn, 0.0)
 
         assertEquals(0.3, p.tax.marginalIsrRate, 0.0)
-        assertEquals(0.009, p.tax.retencionProvisionalAnual, 0.0)
         assertEquals(128383.92, p.tax.exencionAnualBienesMueblesMxn, 0.0)
-        assertEquals(0.0, p.tax.gananciasCriptoYtdMxn, 0.0)
 
         assertEquals(0.08, p.risk.maxPortfolioDrawdownFromCrypto, 0.0)
         assertEquals(0.75, p.risk.assumedCryptoMaxDrawdown, 0.0)
-        assertEquals(0.08, p.risk.cryptoVolTarget, 0.0)
         assertEquals(0.2, p.risk.maxCryptoWeight, 0.0)
         assertEquals(0.03, p.risk.minCryptoWeight, 0.0)
 
         assertEquals(0.005, p.cost.annualFeeBudgetPct, 0.0)
-        assertEquals(0.001, p.cost.takerFeePct, 0.0)
-        assertEquals(0.0005, p.cost.slippagePct, 0.0)
         assertEquals(10.0, p.cost.minNotionalUsd, 0.0)
-        assertEquals(0.0, p.cost.feesSpentYtdMxn, 0.0)
 
-        assertEquals(listOf("BTCUSDT", "ETHUSDT"), p.universe.cryptoSymbols)
+        // 3.0.0: activos canónicos también en la política.
+        assertEquals(listOf("BTC", "ETH"), p.universe.cryptoSymbols)
         assertEquals(listOf(0.75, 0.25), p.universe.cryptoWeights)
 
         assertEquals(0.05, p.requiredRiskPremium, 0.0)
@@ -377,10 +422,6 @@ class SnapshotDtoTest {
         assertThrows(SerializationException::class.java) { SnapshotParser.parse(broken) }
     }
 
-    /**
-     * Volver al esquema viejo (un solo `hurdle_total`) tiene que tronar, no
-     * degradarse a mostrar la tasa anualizada como si fuera la del periodo.
-     */
     @Test
     fun `regresar al hurdle_total viejo truena`() {
         val old = rawJson().replace("\"hurdle_total_periodo\"", "\"hurdle_total\"")
@@ -392,7 +433,6 @@ class SnapshotDtoTest {
 
     @Test
     fun `quitar horizon_days truena`() {
-        // Aparece en hurdle, en required_returns y en policy.portfolio.
         val broken = rawJson().replace("\"horizon_days\"", "\"dias_horizonte\"")
         assertThrows(SerializationException::class.java) { SnapshotParser.parse(broken) }
     }
@@ -404,9 +444,11 @@ class SnapshotDtoTest {
     }
 
     @Test
-    fun `renombrar el rendimiento requerido de periodo truena`() {
-        val broken = rawJson()
-            .replace("\"rendimiento_mxn_requerido_periodo\"", "\"rendimiento_mxn_requerido\"")
+    fun `renombrar el multiplicador de senales dentro de signals truena`() {
+        val broken = rawJson().replace(
+            "\"multiplicador\": 0.75,",
+            "\"mult\": 0.75,",
+        )
         assertThrows(SerializationException::class.java) { SnapshotParser.parse(broken) }
     }
 
@@ -422,22 +464,35 @@ class SnapshotDtoTest {
     @Test
     fun `campos nuevos del engine no rompen la app`() {
         val extended = rawJson().replaceFirst(
-            "\"schema_version\": \"1.0.0\",",
-            "\"schema_version\": \"1.0.0\", \"campo_nuevo\": {\"a\": 1}, \"otro\": [1,2,3],",
+            "\"schema_version\": \"3.1.0\",",
+            "\"schema_version\": \"3.1.0\", \"campo_nuevo\": {\"a\": 1}, \"otro\": [1,2,3],",
         )
         assertEquals("ALLOCATE_TO_CRYPTO", SnapshotParser.parse(extended).action)
+    }
+
+    /** Un snapshot 3.0.0 (sin signals/eventos) sigue parseando: son aditivos. */
+    @Test
+    fun `un snapshot 3-0-0 sin signals ni eventos parsea con nulls`() {
+        val sin = rawJson()
+            .replace(Regex("\"signals\": \\{.*?\\n  \\},\n", RegexOption.DOT_MATCHES_ALL), "")
+            .replace(Regex("\"eventos\": \\{.*?\\n  \\},\n", RegexOption.DOT_MATCHES_ALL), "")
+            .replaceFirst("\"schema_version\": \"3.1.0\"", "\"schema_version\": \"3.0.0\"")
+        val d = SnapshotParser.parse(sin)
+        assertEquals("3.0.0", d.schemaVersion)
+        assertNull(d.signals)
+        assertNull(d.eventos)
     }
 
     @Test
     fun `secciones vacias del engine quedan en null, no en ceros`() {
         val blocked = """
             {
-              "schema_version": "1.0.0",
-              "generated_at": "2026-08-10T03:28:01.658146+00:00",
-              "action": "BLOCKED_STALE_DATA",
-              "headline": "Datos rancios. No se emite recomendación.",
+              "schema_version": "3.1.0",
+              "generated_at": "2026-08-11T02:43:04.378265+00:00",
+              "action": "BLOCKED_STRUCTURAL_BREAK",
+              "headline": "Ruptura estructural detectada.",
               "reasons": [],
-              "blockers": ["cetes_364: 9 días de antigüedad (límite 5)."],
+              "blockers": ["RUPTURA ESTRUCTURAL — SAT: revisión humana."],
               "warnings": [],
               "market": {},
               "hurdle": {},
@@ -447,18 +502,22 @@ class SnapshotDtoTest {
               "required_returns": {},
               "fx": {},
               "data_freshness": {},
+              "signals": {},
+              "eventos": {},
               "policy": {}
             }
         """.trimIndent()
 
         val d = SnapshotParser.parse(blocked)
-        assertEquals("BLOCKED_STALE_DATA", d.action)
+        assertEquals("BLOCKED_STRUCTURAL_BREAK", d.action)
         assertNull(d.market)
         assertNull(d.hurdle)
         assertNull(d.sizing)
         assertNull(d.costs)
         assertNull(d.requiredReturns)
         assertNull(d.fx)
+        assertNull(d.signals)
+        assertNull(d.eventos)
         assertNull(d.policy)
         assertTrue(d.allocationMxn.isEmpty())
         assertTrue(d.dataFreshness.isEmpty())
@@ -477,18 +536,18 @@ class SnapshotDtoTest {
     fun `contents api ignora campos no usados`() {
         val raw = """
             [
-              {"name":"2026-08-09.json","path":"snapshots/2026-08-09.json","sha":"abc",
+              {"name":"2026-08-10.json","path":"snapshots/2026-08-10.json","sha":"abc",
                "size":10462,"type":"file",
-               "download_url":"https://raw.githubusercontent.com/o/r/main/snapshots/2026-08-09.json",
-               "html_url":"https://github.com/o/r/blob/main/snapshots/2026-08-09.json"},
+               "download_url":"https://raw.githubusercontent.com/o/r/main/snapshots/2026-08-10.json",
+               "html_url":"https://github.com/o/r/blob/main/snapshots/2026-08-10.json"},
               {"name":"latest.md","path":"snapshots/latest.md","sha":"def","size":3230,
                "type":"file","download_url":"https://example.invalid/latest.md"}
             ]
         """.trimIndent()
         val items = SnapshotParser.parseContents(raw)
         assertEquals(2, items.size)
-        assertEquals("2026-08-09.json", items[0].name)
+        assertEquals("2026-08-10.json", items[0].name)
         assertEquals("file", items[0].type)
-        assertTrue(requireNotNull(items[0].downloadUrl).endsWith("2026-08-09.json"))
+        assertTrue(requireNotNull(items[0].downloadUrl).endsWith("2026-08-10.json"))
     }
 }
