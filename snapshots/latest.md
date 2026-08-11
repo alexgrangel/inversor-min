@@ -2,7 +2,7 @@
 
 **Aumentar sleeve cripto en 1,440 MXN (objetivo 1,440 MXN, 3.2% del invertible). Costo estimado 2 MXN.**
 
-_Generado: 2026-08-10T20:43:23.136768+00:00 · schema 3.0.0_
+_Generado: 2026-08-11T02:43:04.378265+00:00 · schema 3.1.0_
 
 ## Costo de oportunidad
 
@@ -62,14 +62,52 @@ Contra eso: CETES te paga **2,545 MXN** al año, neto, sin volatilidad.
 | +5% | 5.82% |
 | +10% | 1.01% |
 
+## Próximos eventos
+
+| Fecha | Evento | Verificado |
+|---|---|---|
+| 2026-08-11 | Subasta primaria de CETES | derivado |
+| 2026-08-12 | Publicación de CPI de EE. UU. | ✓ |
+| 2026-08-18 | Subasta primaria de CETES | derivado |
+| 2026-08-25 | Subasta primaria de CETES | derivado |
+| 2026-09-01 | Subasta primaria de CETES | derivado |
+| 2026-09-08 | Subasta primaria de CETES | derivado |
+| 2026-09-09 | Publicación de INPC (INEGI) | derivado |
+| 2026-09-11 | Publicación de CPI de EE. UU. | ✓ |
+| 2026-09-15 | Reunión del FOMC | ✓ |
+| 2026-09-15 | Subasta primaria de CETES | derivado |
+| 2026-09-22 | Subasta primaria de CETES | derivado |
+| 2026-09-24 | Decisión de política monetaria de Banxico | derivado |
+| 2026-09-29 | Subasta primaria de CETES | derivado |
+| 2026-10-06 | Subasta primaria de CETES | derivado |
+| 2026-10-09 | Publicación de INPC (INEGI) | derivado |
+
+### Si Banxico mueve la tasa (escenarios declarados, no pronósticos)
+
+| Movimiento | Hurdle anualizado | Sleeve objetivo | Δ sleeve | Restricción |
+|---|---:|---:|---:|---|
+| -50 pb | 10.49% | 0 MXN | +0 | below_floor |
+| -25 pb | 10.67% | 0 MXN | +0 | below_floor |
+| +0 pb | 10.84% | 0 MXN | +0 | below_floor |
+| +25 pb | 11.02% | 0 MXN | +0 | below_floor |
+
+_El sizing de escenarios suma el costo de oportunidad de CETES al presupuesto de caída: es igual o MÁS estricto que el sizing del día. `below_floor` significa que el sleeve resultante queda bajo el piso operable y se va a cero._
+
 ## Razonamiento
 - Hurdle: CETES 364d al 7.01% nominal → 5.84% neto de ISR (2.64% real). Más prima de riesgo de 5.00% = 10.84% anualizado, equivalente a 10.81% en 364 días.
-- Vol realizada anualizada: 31.0%.
-- Restricción vol-target (8.0% objetivo): 25.8%.
+- Vol realizada anualizada: 31.2%.
+- Restricción vol-target (8.0% objetivo): 25.7%.
 - Restricción presupuesto de caída (8.0% tolerable / 75% caída supuesta del activo): 10.7%.
 - Tope duro: 20.0%.
-- Restricción que manda: regime_multiplier(0.30).
-- Escalado por régimen: x0.30.
+- Restricción que manda: multiplicador(0.30).
+- Escalado por multiplicador (régimen y señales, el que más apriete): x0.30.
+- Fear & Greed en 29 (miedo, ≤ 40): tamaño x0.75.
+- DVOL en 36.1: por debajo de 65, sin recorte.
+- Volumen de noticias: fuente apagada por bandera (GDELT pendiente de estabilizarse). No cuenta como ceguera ni como calma: no opina.
+- Sin rupturas regulatorias en 248 notas revisadas.
+- 1 fuente no disponible (vix: Falta FRED_API_KEY (gratuita en https://fredaccount.stlouisfed.org/apikeys)): sin recorte todavía, los demás indicadores cubren el mismo régimen.
+- Multiplicador de señales: 0.75 (mínimo de 2 recortes; acotado a [0.00, 1.00] por construcción, nunca amplifica).
+- Banxico decide el 2026-09-24. Si recorta 50 pb, el hurdle anualizado baja de 10.84% a 10.49% y el sleeve objetivo pasa a 0 MXN (+0). Escenario declarado con la curva de hoy, no pronóstico.
 - Costo por round-trip: 0.300% del monto rotado (0.100% comisión + 0.050% slippage, x2 lados).
 - Presupuesto anual: 7 MXN (0.50% del sleeve de 1,440 MXN).
 - Operaciones completas permitidas al año: 1.7.
@@ -78,6 +116,8 @@ Contra eso: CETES te paga **2,545 MXN** al año, neto, sin volatilidad.
 - Ganancia esperada (156 MXN) por debajo de la exención anual restante (128,384 MXN). ISR efectivo 0%. SUPUESTO NO CONFIRMADO: exención 3xUMA aplicable a activos virtuales.
 
 ## Advertencias
+- ⚠️ Señales — fuente no disponible: vix: Falta FRED_API_KEY (gratuita en https://fredaccount.stlouisfed.org/apikeys). Se omite FRED; su ausencia se reporta, no se sustituye por un default.
+- ⚠️ Señales — fuente no disponible: vix: sin dato.
 - ⚠️ Sleeve de 1,440 MXN: aun con cripto +50%, el impacto en el portafolio total es +1.44%. Es ruido. Considera no tener la posición y ahorrarte el trabajo operativo y fiscal.
 - ⚠️ Tienes ingresos y gastos en MXN. Una posición cripto es una posición larga en USD sin cobertura. A tu tamaño de cuenta, la volatilidad del tipo de cambio es comparable al alfa que puedes esperar.
 
