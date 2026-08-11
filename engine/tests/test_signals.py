@@ -661,7 +661,7 @@ def test_dof_dia_inhabil_no_es_ceguera(monkeypatch):
     assert notas == [] and caida == ""
 
 
-def test_dof_cae_al_host_de_respaldo(monkeypatch):
+def test_dof_cae_al_host_de_respaldo_y_el_primario_va_primero(monkeypatch):
     intentos: list[str] = []
 
     def get_con_fallo(url, **k):
@@ -673,7 +673,130 @@ def test_dof_cae_al_host_de_respaldo(monkeypatch):
     monkeypatch.setattr(nw, "_get_bytes", get_con_fallo)
     notas, caida = nw.fetch_dof_notas(hoy=HOY)
     assert caida == "" and len(notas) == 4
+    # El primario (sin -qa) se intenta PRIMERO: es la decisión documentada en
+    # SIDOF_HOSTS, no un accidente del orden de la tupla.
+    assert intentos[0].startswith(nw.SIDOF_HOSTS[0])
     assert any(u.startswith(nw.SIDOF_HOSTS[1]) for u in intentos)
+
+
+def test_dof_edicion_ilegible_es_ceguera_no_dia_inhabil(monkeypatch):
+    """El servicio ANUNCIA una edición que no podemos leer: eso es ceguera.
+    Antes, estas cuatro formas colapsaban a ([], "") — indistinguibles de un
+    día inhábil — y la regla 8 prohíbe leer eso como calma."""
+    formas_rotas = [
+        {"messageCode": 200, "Matutina": {"codDiario": 329025}, "Vespertina": None, "Extraordinaria": None},
+        {"messageCode": 200, "Matutina": [{"codDiario": "329025"}], "Vespertina": None, "Extraordinaria": None},
+        {"messageCode": 200, "Matutina": [{"codSeccion": "UNICA"}], "Vespertina": None, "Extraordinaria": None},
+        {"messageCode": 200, "Matutina": "null", "Vespertina": None, "Extraordinaria": None},
+        {"messageCode": 200},  # sin llaves de edición
+    ]
+    for forma in formas_rotas:
+        cuerpo = json.dumps(forma).encode()
+        monkeypatch.setattr(nw, "_get_bytes", lambda *a, _c=cuerpo, **k: _c)
+        notas, caida = nw.fetch_dof_notas(hoy=HOY)
+        assert notas == [] and "no reconocida" in caida, forma
+
+
+def test_dof_caida_parcial_conserva_lo_obtenido_y_reporta_ceguera(monkeypatch):
+    """La matutina parseó (y puede traer la ruptura); la vespertina no
+    respondió. Descartar lo obtenido tiraba una detección ya pagada; callar
+    la caída leía el hueco como calma. Se hacen las DOS cosas seguras."""
+    por_fecha = json.dumps({
+        "messageCode": 200,
+        "Matutina": [{"codDiario": 1001}], "Vespertina": [{"codDiario": 1002}],
+        "Extraordinaria": None,
+    }).encode()
+    inhabil = json.dumps({
+        "messageCode": 200, "Matutina": None, "Vespertina": None, "Extraordinaria": None,
+    }).encode()
+    notas_1001 = json.dumps({
+        "messageCode": 200,
+        "Notas": [{
+            "codNota": 1, "fecha": "11-08-2026",
+            "titulo": "La CNBV suspende operaciones con activos virtuales",
+            "codOrgaUno": "PODER EJECUTIVO",
+            "codOrgaDos": "COMISION NACIONAL BANCARIA Y DE VALORES",
+        }],
+    }).encode()
+
+    def get(url, **k):
+        if "porFecha/11-08-2026" in url:
+            return por_fecha
+        if "porFecha" in url:
+            return inhabil
+        if url.endswith("obtenerNotasPorDiario/1001"):
+            return notas_1001
+        raise nw.NewsUnavailable("timeout")  # 1002, ambos hosts
+
+    monkeypatch.setattr(nw, "_get_bytes", get)
+    notas, caida = nw.fetch_dof_notas(hoy=date(2026, 8, 11))
+    assert len(notas) == 1 and "CNBV" in notas[0].titulo
+    assert "1002" in caida  # la ceguera parcial queda reportada
+    rup = nw.ruptura_estructural(notas)
+    assert rup.detectada  # la detección sobrevive a la caída parcial
+
+
+def test_dof_404_de_fin_de_semana_no_es_ceguera(monkeypatch):
+    """SIDOF responde HTTP 404 en porFecha de sábados/domingos (verificado en
+    vivo: 08-08-2026). Es la afirmación 'no existe diario esa fecha', no una
+    caída — leerlo como ceguera acercaba el recorte 0.60x cada lunes."""
+
+    def get(url, **k):
+        if "porFecha/11-08-2026" in url or "porFecha/10-08-2026" in url:
+            return _dof_get_bytes_real(
+                url if "porFecha" not in url else url.replace("10-08-2026", "11-08-2026")
+            )
+        if "porFecha" in url:  # 09 y 08 de agosto: fin de semana
+            raise nw.NewsUnavailable("HTTP 404", http_status=404)
+        return _dof_get_bytes_real(url)
+
+    monkeypatch.setattr(nw, "_get_bytes", get)
+    notas, caida = nw.fetch_dof_notas(hoy=date(2026, 8, 11))
+    assert caida == ""
+    assert len(notas) == 4
+
+
+def test_dof_404_en_notas_de_un_diario_anunciado_si_es_caida(monkeypatch):
+    """El 404 benigno es SOLO el de porFecha: si el paso 1 anunció un diario
+    y el paso 2 responde 404, algo está roto — ceguera, no calma."""
+
+    def get(url, **k):
+        if "porFecha/11-08-2026" in url:
+            return _dof_fixture("dof_diarios_porfecha.json")
+        if "porFecha" in url:
+            raise nw.NewsUnavailable("HTTP 404", http_status=404)
+        raise nw.NewsUnavailable("HTTP 404", http_status=404)  # obtenerNotas
+
+    monkeypatch.setattr(nw, "_get_bytes", get)
+    notas, caida = nw.fetch_dof_notas(hoy=date(2026, 8, 11))
+    assert notas == []
+    assert "329025" in caida
+
+
+def test_dof_titulo_null_literal_se_salta():
+    payload = {
+        "messageCode": 200,
+        "Notas": [
+            {"codNota": 1, "fecha": "11-08-2026", "titulo": "null"},
+            {"codNota": 2, "fecha": "11-08-2026", "titulo": "Decreto real"},
+        ],
+    }
+    notas = nw._dof_notas_de_diario(payload)
+    assert notas is not None and [n.titulo for n in notas] == ["Decreto real"]
+
+
+def test_guardas_de_gdelt_si_algun_dia_revive():
+    """GDELT está fuera del set, pero las dos correcciones medidas quedan
+    pinneadas para que una reactivación no herede los bugs: los OR exigen
+    paréntesis, y la baseline de 11 puntos exige timespan > 11 días."""
+    import inspect
+
+    from inversor.config import SignalsPolicy
+
+    consulta = SignalsPolicy().gdelt_consulta
+    assert consulta.startswith("(") and consulta.endswith(")")
+    firma = inspect.signature(nw.fetch_volumen_anomalo)
+    assert firma.parameters["timespan"].default == "30d"
 
 
 def test_dof_organismo_alimenta_los_patrones_de_ruptura(monkeypatch):

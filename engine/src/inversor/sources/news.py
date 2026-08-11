@@ -56,7 +56,7 @@ import xml.etree.ElementTree as ET
 import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 
@@ -187,7 +187,16 @@ class NewsUnavailable(NewsError):
     NO DISPONIBLE ≠ TRANQUILO. Todo el módulo depende de que esta distinción se
     respete aguas abajo: `signals.combinar` trata una fuente caída como una
     razón para tener MENOS posición, nunca como permiso para tener más.
+
+    `http_status` viaja estructurado porque hay UN código que no es caída:
+    el 404 de SIDOF en diarios/porFecha afirma "no existe diario en esa
+    fecha" (sábados y domingos responden así, verificado 11-ago-2026), y
+    distinguirlo por substring del mensaje sería frágil.
     """
+
+    def __init__(self, mensaje: str, http_status: int | None = None) -> None:
+        super().__init__(mensaje)
+        self.http_status = http_status
 
 
 @dataclass(frozen=True)
@@ -260,12 +269,15 @@ def _get_bytes(url: str, timeout: int = 20, intentos: int = 1) -> bytes:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return _descomprimir(r.read(), r.headers.get("Content-Encoding", ""))
         except urllib.error.HTTPError as e:
-            ultimo = NewsUnavailable(f"HTTP {e.code} en {url}")
+            ultimo = NewsUnavailable(f"HTTP {e.code} en {url}", http_status=e.code)
             if e.code not in CODIGOS_REINTENTABLES:
                 break
         except Exception as e:  # noqa: BLE001
             ultimo = NewsUnavailable(f"Fallo de red en {url}: {e}")
-    raise NewsUnavailable(f"{url} no disponible tras {realizados} intento(s): {ultimo}")
+    raise NewsUnavailable(
+        f"{url} no disponible tras {realizados} intento(s): {ultimo}",
+        http_status=getattr(ultimo, "http_status", None),
+    )
 
 
 def _descomprimir(raw: bytes, content_encoding: str) -> bytes:
@@ -609,88 +621,149 @@ def fetch_ruptura_estructural(desde: date | None = None) -> tuple[RupturaEstruct
 # organismo es exactamente donde esos nombres aparecen completos.
 
 
+# Ventana de fechas a consultar. 4 días y no 1: la edición VESPERTINA (y la
+# mayoría de las extraordinarias) se publica después de las 14:00 CDMX — la
+# corrida del día D a las 14:00 no la ve, y la del día D+1 preguntaba por D+1,
+# así que nadie la escaneaba jamás. Es exactamente la edición donde aterrizan
+# los decretos urgentes que ruptura_estructural existe para atrapar. Con 4
+# días, la vespertina del viernes se revisa el lunes. Releer una nota ya vista
+# es idempotente: una ruptura re-detectada DEBE seguir bloqueando mientras
+# esté en ventana.
+DOF_DIAS_VENTANA = 4
+
+
 def fetch_dof_notas(
     hoy: date | None = None, timeout: int = 20
 ) -> tuple[list[Nota], str]:
     """
-    Devuelve (notas, mensaje_de_caida). Si el mensaje no está vacío, la fuente
-    cuenta como NO DISPONIBLE para el combinador. Un día sin diarios (sábado,
-    domingo, feriado) devuelve ([], "") — que el DOF no publique en día
-    inhábil es un hecho verificable, no ceguera.
+    Devuelve (notas, mensaje_de_caida). Ambos pueden venir poblados A LA VEZ:
+    una caída parcial (la matutina parseó, la vespertina no respondió) escanea
+    lo obtenido Y cuenta la fuente como ciega — descartar notas ya obtenidas
+    tiraba una ruptura ya detectada, y no reportar la caída leía el hueco como
+    calma. Las dos cosas empujan en la dirección segura.
+
+    Un día sin diarios (sábado, domingo, feriado) no aporta caída SÓLO cuando
+    el servicio lo AFIRMA con la forma exacta documentada (200 + las tres
+    ediciones en null): eso es una respuesta positiva de la fuente, no
+    silencio. Cualquier edición anunciada que no se pueda interpretar es
+    ceguera, no calma (regla 8).
     """
     hoy = hoy or date.today()
-    fecha = f"{hoy:%d-%m-%Y}"
+    fallos: list[str] = []
+    diarios: list[int] = []
 
-    payload, caida = _dof_json(SIDOF_DIARIOS_POR_FECHA.format(fecha=fecha), timeout)
-    if caida:
-        return [], caida
-    diarios = _dof_diarios(payload)
-    if diarios is None:
-        return [], "dof:sidof: forma de respuesta no reconocida en diarios/porFecha."
-    if not diarios:
-        return [], ""
+    for delta in range(DOF_DIAS_VENTANA):
+        fecha = f"{hoy - timedelta(days=delta):%d-%m-%Y}"
+        payload, caida = _dof_json(
+            SIDOF_DIARIOS_POR_FECHA.format(fecha=fecha), timeout, ausencia_404=True
+        )
+        if payload is _DOF_SIN_DIARIO:
+            continue
+        if caida:
+            fallos.append(f"{caida} [{fecha}]")
+            continue
+        codigos = _dof_diarios(payload)
+        if codigos is None:
+            fallos.append(
+                f"dof:sidof: forma de respuesta no reconocida en"
+                f" diarios/porFecha/{fecha}."
+            )
+            continue
+        diarios.extend(c for c in codigos if c not in diarios)
 
     notas: list[Nota] = []
+    algun_diario_parseado = False
     for cod_diario in diarios:
         payload, caida = _dof_json(
             SIDOF_NOTAS_POR_DIARIO.format(cod_diario=cod_diario), timeout
         )
         if caida:
-            return [], caida
+            fallos.append(f"{caida} [diario {cod_diario}]")
+            continue
         parsed = _dof_notas_de_diario(payload)
         if parsed is None:
-            return [], (
+            fallos.append(
                 f"dof:sidof: forma de respuesta no reconocida en"
                 f" obtenerNotasPorDiario/{cod_diario}."
             )
+            continue
+        algun_diario_parseado = True
         notas.extend(parsed)
 
-    if not notas:
-        # Hubo diarios pero cero notas interpretables: eso ya no es un día
-        # inhábil, es una forma cambiada. Ceguera, no calma.
-        return [], "dof:sidof: diarios sin notas interpretables."
-    return notas, ""
+    if diarios and algun_diario_parseado and not notas:
+        # Hubo diarios y parsearon, pero cero notas con título: forma cambiada.
+        fallos.append("dof:sidof: diarios sin notas interpretables.")
+    return notas, "; ".join(fallos)
 
 
-def _dof_json(path: str, timeout: int) -> tuple[Any, str]:
-    """GET con cascada de hosts. Devuelve (payload, mensaje_de_caida)."""
-    ultimo = ""
+# Sentinela: el servicio afirmó "no existe diario en esa fecha" (HTTP 404 en
+# porFecha). Es una respuesta positiva de la fuente — sábados, domingos y
+# feriados responden así (verificado 11-ago-2026 con el sábado 08-08) — y
+# leerla como caída convertía cada fin de semana de la ventana en ceguera
+# que acercaba el recorte 0.60x sin que nada estuviera roto.
+_DOF_SIN_DIARIO = object()
+
+
+def _dof_json(path: str, timeout: int, ausencia_404: bool = False) -> tuple[Any, str]:
+    """
+    GET con cascada de hosts. Devuelve (payload, mensaje_de_caida). El mensaje
+    conserva el error de CADA host: "falló el primario" y "fallaron los dos"
+    son diagnósticos distintos y el snapshot debe poder distinguirlos.
+
+    Con ausencia_404=True (sólo diarios/porFecha), un HTTP 404 devuelve el
+    sentinela _DOF_SIN_DIARIO sin caída. En obtenerNotasPorDiario un 404 SÍ
+    es caída: el diario fue anunciado por el paso anterior.
+    """
+    errores: list[str] = []
     for host in SIDOF_HOSTS:
+        etiqueta = host.split("//", 1)[-1]
         try:
             raw = _get_bytes(f"{host}{path}", timeout=timeout, intentos=2)
         except NewsError as e:
-            ultimo = f"dof:sidof: {e}"
+            if ausencia_404 and getattr(e, "http_status", None) == 404:
+                return _DOF_SIN_DIARIO, ""
+            errores.append(f"{etiqueta}: {e}")
             continue
         try:
             payload = json.loads(raw.decode("utf-8", errors="replace"))
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            ultimo = f"dof:sidof: respuesta no-JSON ({e})."
+            errores.append(f"{etiqueta}: respuesta no-JSON ({e}).")
             continue
         if isinstance(payload, dict) and payload.get("messageCode") == 200:
             return payload, ""
-        ultimo = (
-            f"dof:sidof: messageCode {payload.get('messageCode')!r}"
+        errores.append(
+            f"{etiqueta}: messageCode {payload.get('messageCode')!r}"
             if isinstance(payload, dict)
-            else "dof:sidof: respuesta no es un objeto JSON."
+            else f"{etiqueta}: la respuesta no es un objeto JSON."
         )
-    return None, ultimo or "dof:sidof: sin respuesta."
+    return None, "dof:sidof: " + (" | ".join(errores) or "sin respuesta.")
 
 
 def _dof_diarios(payload: dict) -> list[int] | None:
     """
-    codDiario de cada edición publicada. Las llaves son Matutina/Vespertina/
-    Extraordinaria, cada una lista de secciones o null. [] = día sin diarios.
+    codDiario de cada edición publicada, con validación POSITIVA de forma:
+    sólo dos respuestas son legítimas — ediciones en null (día inhábil) o
+    listas de secciones con codDiario entero. Cualquier otra cosa (edición
+    como dict, codDiario en string, sección sin código) es None → caída: el
+    servicio ANUNCIÓ una edición que no pudimos leer, y una edición ilegible
+    leída como "día sin diarios" es ceguera disfrazada de calma (regla 8).
     """
-    ediciones = [payload.get(k) for k in ("Matutina", "Vespertina", "Extraordinaria")]
-    if all(e is None for e in ediciones) and "Matutina" not in payload:
+    if "Matutina" not in payload:
         return None
     codigos: list[int] = []
-    for ed in ediciones:
-        if not isinstance(ed, list):
+    for k in ("Matutina", "Vespertina", "Extraordinaria"):
+        ed = payload.get(k)
+        if ed is None:
             continue
+        if not isinstance(ed, list):
+            return None
         for seccion in ed:
-            cod = seccion.get("codDiario") if isinstance(seccion, dict) else None
-            if isinstance(cod, int) and cod not in codigos:
+            if not isinstance(seccion, dict):
+                return None
+            cod = seccion.get("codDiario")
+            if not isinstance(cod, int):
+                return None
+            if cod not in codigos:
                 codigos.append(cod)
     return codigos
 
@@ -706,9 +779,16 @@ def _dof_notas_de_diario(payload: dict) -> list[Nota] | None:
         titulo = str(fila.get("titulo") or "").strip()
         if not titulo or titulo == "null":
             continue
+        # codOrgaUno/Dos son los que el servicio REALMENTE puebla (medido
+        # 11-ago-2026: codOrgaUno 141/141, codOrgaDos 33/141; nombreCodOrgaUno
+        # y nombOrganismo vienen null en obtenerNotasPorDiario — aunque el
+        # listado por fecha sí llena nombreCodOrgaUno, así que se leen todos).
         organismos = " ".join(
             str(fila.get(c) or "").strip()
-            for c in ("nombreCodOrgaUno", "codOrgaDos", "codOrgaTres", "nombOrganismo")
+            for c in (
+                "codOrgaUno", "nombreCodOrgaUno", "codOrgaDos",
+                "codOrgaTres", "codOrgaCuatro", "nombOrganismo",
+            )
             if str(fila.get(c) or "").strip() not in ("", "null")
         )
         cod_nota = fila.get("codNota")
