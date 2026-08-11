@@ -616,11 +616,84 @@ def test_recolectar_trata_lo_rancio_como_caido(monkeypatch):
 
 
 def test_dof_degrada_a_no_disponible_cuando_la_forma_no_se_reconoce(monkeypatch):
-    """Los query params de SIDOF siguen sin documentar: no se adivina."""
+    """Una forma cambiada del servicio se lee como ceguera, nunca se adivina."""
     monkeypatch.setattr(nw, "_get_bytes", lambda *a, **k: b'{"algo":"raro"}')
-    notas, caida = nw.fetch_dof_notas()
+    notas, caida = nw.fetch_dof_notas(hoy=HOY)
     assert notas == []
     assert "sidof" in caida
+
+
+def _dof_fixture(nombre: str) -> bytes:
+    from pathlib import Path
+
+    return (Path(__file__).parent / "fixtures" / nombre).read_bytes()
+
+
+def _dof_get_bytes_real(url: str, **_: object) -> bytes:
+    # Respuestas REALES capturadas del servicio el 11-ago-2026.
+    if "diarios/porFecha" in url:
+        return _dof_fixture("dof_diarios_porfecha.json")
+    if "obtenerNotasPorDiario" in url:
+        return _dof_fixture("dof_notas_por_diario.json")
+    raise AssertionError(f"URL inesperada: {url}")
+
+
+def test_dof_parsea_el_flujo_documentado(monkeypatch):
+    """diarios/porFecha → obtenerNotasPorDiario, con las respuestas reales."""
+    monkeypatch.setattr(nw, "_get_bytes", _dof_get_bytes_real)
+    notas, caida = nw.fetch_dof_notas(hoy=date(2026, 8, 11))
+    assert caida == ""
+    # El fixture trae 5 notas: 4 con título y 1 sin (nota de sólo imagen,
+    # existe en el diario real). La sin título se salta, no truena.
+    assert len(notas) == 4
+    assert all(n.fuente == "dof" for n in notas)
+    assert all(n.fecha == date(2026, 8, 11) for n in notas)
+    assert any("Banco de Mexico".casefold() in n.resumen.casefold() for n in notas)
+    assert all(n.url.startswith("https://sidof.segob.gob.mx/notas/") for n in notas)
+
+
+def test_dof_dia_inhabil_no_es_ceguera(monkeypatch):
+    """El DOF no publica sábados/domingos/feriados: [] sin caída — un hecho
+    verificable, no ceguera. Un feriado no debe acercar el recorte 0.60x."""
+    vacio = b'{"messageCode":200,"response":"OK","Matutina":null,"Vespertina":null,"Extraordinaria":null}'
+    monkeypatch.setattr(nw, "_get_bytes", lambda *a, **k: vacio)
+    notas, caida = nw.fetch_dof_notas(hoy=HOY)
+    assert notas == [] and caida == ""
+
+
+def test_dof_cae_al_host_de_respaldo(monkeypatch):
+    intentos: list[str] = []
+
+    def get_con_fallo(url, **k):
+        intentos.append(url)
+        if url.startswith(nw.SIDOF_HOSTS[0]):
+            raise nw.NewsUnavailable("HTTP 503")
+        return _dof_get_bytes_real(url)
+
+    monkeypatch.setattr(nw, "_get_bytes", get_con_fallo)
+    notas, caida = nw.fetch_dof_notas(hoy=HOY)
+    assert caida == "" and len(notas) == 4
+    assert any(u.startswith(nw.SIDOF_HOSTS[1]) for u in intentos)
+
+
+def test_dof_organismo_alimenta_los_patrones_de_ruptura(monkeypatch):
+    """El resumen lleva los organismos a propósito: 'COMISION NACIONAL
+    BANCARIA Y DE VALORES' como emisor + 'activos virtuales' en el título es
+    exactamente la ruptura que la lista curada debe atrapar."""
+    payload = {
+        "messageCode": 200, "response": "OK",
+        "Notas": [{
+            "codNota": 999, "fecha": "11-08-2026",
+            "titulo": "Disposiciones de carácter general sobre activos virtuales",
+            "nombreCodOrgaUno": "PODER EJECUTIVO",
+            "codOrgaDos": "COMISION NACIONAL BANCARIA Y DE VALORES",
+        }],
+    }
+    notas = nw._dof_notas_de_diario(payload)
+    assert notas is not None and len(notas) == 1
+    rup = nw.ruptura_estructural(notas)
+    assert rup.detectada
+    assert any("CNBV" in c.etiqueta for c in rup.coincidencias)
 
 
 # =====================================================================

@@ -24,8 +24,14 @@ fiscal o de la posibilidad misma de tener la posición.
   CONFIRMADO   elfinanciero.com.mx/arc/outboundfeeds  Arc XP, RESPUESTA GZIPPED
   CONFIRMADO   bloomberglinea.com/arc/outboundfeeds   Arc XP, RESPUESTA GZIPPED
   CONFIRMADO   GDELT DOC 2.0 responde, y estrangula agresivo: 429 y luego 500
-               en una prueba en vivo de hoy.
-  SIN VERIFICAR SIDOF (DOF): los parámetros de consulta NO están documentados.
+               (10-ago-2026); re-medido 11-ago-2026: 8/9 peticiones
+               inutilizables con espaciado de 12-20 s (siete 429, un 200 con
+               error en el cuerpo). FUERA del set activo (SignalsPolicy).
+  CONFIRMADO   SIDOF (DOF): servicio web REST oficial, documentado en los PDF
+               de sidof.segob.gob.mx/datos_abiertos y verificado en vivo el
+               11-ago-2026 (141 notas de la edición matutina, con título).
+               El getJSON/65 que se usaba antes era el JSON de EJEMPLO de esa
+               página (11 diarios estáticos de 2013), no el servicio.
   EXCLUIDO      eleconomista.com.mx — responde 403 a clientes no-navegador. No
                 se incluye: rotar User-Agents para saltarse un bloqueo explícito
                 es pedir un bloqueo por IP y meter al repo en una pelea que no
@@ -57,7 +63,15 @@ from typing import Any
 from .market_stress import USER_AGENT
 
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
-SIDOF_JSON = "https://sidof.segob.gob.mx/datos_abiertos/getJSON/65"
+
+# Servicio web oficial de SIDOF (documentación: los getPDF/4x-6x de
+# /datos_abiertos; "Consultar Notas" es el getPDF/57). Los PDF citan el host
+# sidofqa.segob.gob.mx — sí, QA — pero ambos hosts sirven datos idénticos de
+# producción (verificado 11-ago-2026); se intenta primero el host sin -qa y el
+# documentado queda de respaldo.
+SIDOF_HOSTS = ("https://sidof.segob.gob.mx", "https://sidofqa.segob.gob.mx")
+SIDOF_DIARIOS_POR_FECHA = "/dof/sidof/diarios/porFecha/{fecha}"   # DD-MM-AAAA
+SIDOF_NOTAS_POR_DIARIO = "/dof/sidof/notas/obtenerNotasPorDiario/{cod_diario}"
 
 RSS_FEEDS: dict[str, str] = {
     "expansion": "https://expansion.mx/rss",
@@ -490,9 +504,16 @@ def volumen_anomalo(
 
 
 def fetch_volumen_anomalo(
-    consulta: str, timespan: str = "7d", z_umbral: float = Z_ANOMALO
+    consulta: str, timespan: str = "30d", z_umbral: float = Z_ANOMALO
 ) -> VolumenAnomalo:
-    """Envoltura con red. Cualquier fallo se traduce a `disponible=False`."""
+    """
+    Envoltura con red. Cualquier fallo se traduce a `disponible=False`.
+
+    timespan 30d y no 7d: la timeline diaria trae un punto por día (medido
+    11-ago-2026: 30 puntos en 30d) y la baseline exige MIN_PUNTOS_BASELINE+1
+    = 11 — con 7d el volumen anómalo era matemáticamente imposible de calcular
+    y la fuente habría sido ceguera permanente incluso con GDELT sano.
+    """
     try:
         serie = fetch_gdelt_timeline(consulta, timespan=timespan)
     except (NewsError, ValueError) as e:
@@ -577,79 +598,125 @@ def fetch_ruptura_estructural(desde: date | None = None) -> tuple[RupturaEstruct
 
 # ------------------------------------------------------------- DOF vía SIDOF
 
-# ⚠️ PARÁMETROS SIN VERIFICAR. `getJSON/65` (consulta diaria) responde, pero el
-# esquema de sus query params NO está documentado en ningún lado público y no
-# se pudo verificar en vivo. Los candidatos plausibles —fecha, anio/mes/dia,
-# f_inicio/f_fin— son CONJETURA. Este fetcher se escribe defensivo a propósito:
-# ante cualquier duda devuelve "no disponible" en vez de adivinar y publicar un
-# resultado que parece un dato del DOF sin serlo (CLAUDE.md regla 5).
+# Flujo documentado (getPDF/57 "Consultar Notas", verificado en vivo
+# 11-ago-2026): diarios del día → notas por diario. El listado de notas por
+# FECHA (/notas/{fecha}) trae metadatos sin título; el de notas por DIARIO sí
+# trae `titulo` — por eso son dos pasos. Costo: 1 + N_ediciones peticiones por
+# corrida (normalmente 2: matutina, y vespertina cuando existe).
 #
-# TAREA PENDIENTE, no bug: hay que hacerle ingeniería inversa a los parámetros
-# capturando lo que manda el portal https://sidof.segob.gob.mx desde el
-# inspector de red del navegador, y verificar el mapeo de campos contra una
-# edición del DOF conocida. Hasta entonces el DOF cuenta como fuente caída, y
-# como tal RECORTA tamaño en vez de ser ignorado en silencio.
-_CAMPOS_TITULO = ("titulo", "nombre", "descripcion", "nota", "asunto", "encabezado")
-_CAMPOS_URL = ("url", "link", "enlace", "archivo", "pdf")
-_CAMPOS_FECHA = ("fecha", "fecha_publicacion", "fechaPublicacion", "fecha_dof")
+# El `resumen` de cada Nota lleva los ORGANISMOS emisores a propósito: los
+# patrones de ruptura buscan "comision nacional bancaria", "sat", etc., y el
+# organismo es exactamente donde esos nombres aparecen completos.
 
 
 def fetch_dof_notas(
-    params: dict[str, Any] | None = None, timeout: int = 20
+    hoy: date | None = None, timeout: int = 20
 ) -> tuple[list[Nota], str]:
     """
     Devuelve (notas, mensaje_de_caida). Si el mensaje no está vacío, la fuente
-    cuenta como NO DISPONIBLE para el combinador.
+    cuenta como NO DISPONIBLE para el combinador. Un día sin diarios (sábado,
+    domingo, feriado) devuelve ([], "") — que el DOF no publique en día
+    inhábil es un hecho verificable, no ceguera.
     """
-    url = SIDOF_JSON
-    if params:
-        url = f"{SIDOF_JSON}?{urllib.parse.urlencode(params)}"
-    try:
-        raw = _get_bytes(url, timeout=timeout, intentos=2)
-    except NewsError as e:
-        return [], f"dof:sidof: {e}"
+    hoy = hoy or date.today()
+    fecha = f"{hoy:%d-%m-%Y}"
 
-    try:
-        payload = json.loads(raw.decode("utf-8", errors="replace"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        return [], f"dof:sidof: respuesta no-JSON ({e})."
+    payload, caida = _dof_json(SIDOF_DIARIOS_POR_FECHA.format(fecha=fecha), timeout)
+    if caida:
+        return [], caida
+    diarios = _dof_diarios(payload)
+    if diarios is None:
+        return [], "dof:sidof: forma de respuesta no reconocida en diarios/porFecha."
+    if not diarios:
+        return [], ""
 
-    filas = _dof_filas(payload)
-    if filas is None:
-        return [], (
-            "dof:sidof: forma de respuesta no reconocida. Los query params de"
-            " getJSON/65 siguen sin documentar; falta ingeniería inversa."
+    notas: list[Nota] = []
+    for cod_diario in diarios:
+        payload, caida = _dof_json(
+            SIDOF_NOTAS_POR_DIARIO.format(cod_diario=cod_diario), timeout
         )
+        if caida:
+            return [], caida
+        parsed = _dof_notas_de_diario(payload)
+        if parsed is None:
+            return [], (
+                f"dof:sidof: forma de respuesta no reconocida en"
+                f" obtenerNotasPorDiario/{cod_diario}."
+            )
+        notas.extend(parsed)
 
-    notas = [n for n in (_dof_nota(f) for f in filas) if n is not None]
     if not notas:
-        return [], "dof:sidof: 0 registros interpretables en la respuesta."
+        # Hubo diarios pero cero notas interpretables: eso ya no es un día
+        # inhábil, es una forma cambiada. Ceguera, no calma.
+        return [], "dof:sidof: diarios sin notas interpretables."
     return notas, ""
 
 
-def _dof_filas(payload: Any) -> list[dict] | None:
-    """El envoltorio del JSON no está documentado: se prueban las formas obvias."""
-    if isinstance(payload, list):
-        return [f for f in payload if isinstance(f, dict)]
-    if isinstance(payload, dict):
-        for clave in ("datos", "data", "registros", "resultados", "items"):
-            valor = payload.get(clave)
-            if isinstance(valor, list):
-                return [f for f in valor if isinstance(f, dict)]
-    return None
-
-
-def _dof_nota(fila: dict) -> Nota | None:
-    titulo = next((str(fila[c]) for c in _CAMPOS_TITULO if fila.get(c)), "")
-    if not titulo.strip():
-        return None
-    url = next((str(fila[c]) for c in _CAMPOS_URL if fila.get(c)), "")
-    fecha_raw = next((str(fila[c]) for c in _CAMPOS_FECHA if fila.get(c)), "")
-    fecha = None
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S", "%d-%m-%Y"):
+def _dof_json(path: str, timeout: int) -> tuple[Any, str]:
+    """GET con cascada de hosts. Devuelve (payload, mensaje_de_caida)."""
+    ultimo = ""
+    for host in SIDOF_HOSTS:
         try:
-            fecha = datetime.strptime(fecha_raw.strip()[:19], fmt).date()
-            break
-        except ValueError:
+            raw = _get_bytes(f"{host}{path}", timeout=timeout, intentos=2)
+        except NewsError as e:
+            ultimo = f"dof:sidof: {e}"
             continue
-    return Nota("dof", titulo.strip(), "", url.strip(), fecha)
+        try:
+            payload = json.loads(raw.decode("utf-8", errors="replace"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            ultimo = f"dof:sidof: respuesta no-JSON ({e})."
+            continue
+        if isinstance(payload, dict) and payload.get("messageCode") == 200:
+            return payload, ""
+        ultimo = (
+            f"dof:sidof: messageCode {payload.get('messageCode')!r}"
+            if isinstance(payload, dict)
+            else "dof:sidof: respuesta no es un objeto JSON."
+        )
+    return None, ultimo or "dof:sidof: sin respuesta."
+
+
+def _dof_diarios(payload: dict) -> list[int] | None:
+    """
+    codDiario de cada edición publicada. Las llaves son Matutina/Vespertina/
+    Extraordinaria, cada una lista de secciones o null. [] = día sin diarios.
+    """
+    ediciones = [payload.get(k) for k in ("Matutina", "Vespertina", "Extraordinaria")]
+    if all(e is None for e in ediciones) and "Matutina" not in payload:
+        return None
+    codigos: list[int] = []
+    for ed in ediciones:
+        if not isinstance(ed, list):
+            continue
+        for seccion in ed:
+            cod = seccion.get("codDiario") if isinstance(seccion, dict) else None
+            if isinstance(cod, int) and cod not in codigos:
+                codigos.append(cod)
+    return codigos
+
+
+def _dof_notas_de_diario(payload: dict) -> list[Nota] | None:
+    filas = payload.get("Notas")
+    if not isinstance(filas, list):
+        return None
+    notas: list[Nota] = []
+    for fila in filas:
+        if not isinstance(fila, dict):
+            continue
+        titulo = str(fila.get("titulo") or "").strip()
+        if not titulo or titulo == "null":
+            continue
+        organismos = " ".join(
+            str(fila.get(c) or "").strip()
+            for c in ("nombreCodOrgaUno", "codOrgaDos", "codOrgaTres", "nombOrganismo")
+            if str(fila.get(c) or "").strip() not in ("", "null")
+        )
+        cod_nota = fila.get("codNota")
+        url = f"https://sidof.segob.gob.mx/notas/{cod_nota}" if cod_nota else ""
+        fecha = None
+        try:
+            fecha = datetime.strptime(str(fila.get("fecha", "")).strip(), "%d-%m-%Y").date()
+        except ValueError:
+            pass  # fecha ilegible no invalida la nota (mismo criterio que RSS)
+        notas.append(Nota("dof", titulo, organismos, url, fecha))
+    return notas

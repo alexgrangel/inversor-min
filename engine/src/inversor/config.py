@@ -120,19 +120,26 @@ class SignalsPolicy:
     # Apagado maestro de la capa de señales (diagnóstico/emergencia).
     enabled: bool = True
 
-    # GDELT rate-limita agresivo: 429 y luego 500 en pruebas en vivo del
-    # 10-ago-2026. Apagado hasta medir su tolerancia real (Prompt 6); dejarlo
-    # encendido y caído haría del recorte por ceguera el estado permanente.
+    # GDELT queda FUERA del set por medición, no por accidente (Prompt 6,
+    # 11-ago-2026): 8 de 9 peticiones inutilizables desde IP residencial con
+    # espaciado de 12-20 s — siete 429 y un 200 cuyo cuerpo era un error de
+    # sintaxis; un solo éxito real. Su propio mensaje de límite dice "una cada
+    # 5 segundos" y aun así estrangula: el límite real es un presupuesto opaco
+    # compartido. Desde los runners de GitHub (IPs compartidas) sería peor.
+    # La respuesta correcta es sacarlo del set, no aflojar el umbral. Apagada
+    # ≠ caída: no cuenta para el recorte por ceguera.
     gdelt_enabled: bool = False
 
-    # Consulta de GDELT para el volumen de noticias. [SIN CALIBRAR — Prompt 6:
-    # elegirla junto con la medición de rate limit.]
-    gdelt_consulta: str = "bitcoin OR ethereum OR criptomonedas"
+    # Consulta de GDELT si algún día se reactiva. Los OR EXIGEN paréntesis:
+    # sin ellos la API devuelve 200 con el error "Queries containing OR'd
+    # terms must be surrounded by ()" como cuerpo (medido 11-ago-2026).
+    gdelt_consulta: str = "(bitcoin OR ethereum OR criptomonedas)"
 
-    # Los query params de SIDOF (getJSON/65) están sin documentar; hoy el
-    # fetcher es una fuente permanentemente ciega. Apagado hasta capturar los
-    # params reales del inspector de red (Prompt 6).
-    dof_enabled: bool = False
+    # SIDOF arreglado (Prompt 6, 11-ago-2026): el repo le pegaba al JSON de
+    # EJEMPLO de la página de datos abiertos; el servicio real está documentado
+    # en los PDF de esa misma página y verificado en vivo (141 notas con
+    # título de la edición del 11-ago). Ver sources/news.py.
+    dof_enabled: bool = True
 
 
 @dataclass(frozen=True)

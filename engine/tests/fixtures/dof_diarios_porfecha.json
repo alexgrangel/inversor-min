@@ -1,0 +1,20 @@
+{
+ "messageCode": 200,
+ "response": "OK",
+ "Extraordinaria": null,
+ "Vespertina": null,
+ "Matutina": [
+  {
+   "codImagen": null,
+   "codDiario": 329025,
+   "pagina": null,
+   "tipoArchivo": null,
+   "nombreArchivo": null,
+   "codSeccion": "UNICA",
+   "tipoPagina": null,
+   "paginaIni": "1",
+   "paginaMax": "342",
+   "orden": 0
+  }
+ ]
+}
