@@ -2,7 +2,7 @@
 
 **Aumentar sleeve cripto en 1,440 MXN (objetivo 1,440 MXN, 3.2% del invertible). Costo estimado 2 MXN.**
 
-_Generado: 2026-08-11T02:43:04.378265+00:00 · schema 3.1.0_
+_Generado: 2026-08-11T20:45:21.765273+00:00 · schema 3.1.0_
 
 ## Costo de oportunidad
 
@@ -96,15 +96,15 @@ _El sizing de escenarios suma el costo de oportunidad de CETES al presupuesto de
 ## Razonamiento
 - Hurdle: CETES 364d al 7.01% nominal → 5.84% neto de ISR (2.64% real). Más prima de riesgo de 5.00% = 10.84% anualizado, equivalente a 10.81% en 364 días.
 - Vol realizada anualizada: 31.2%.
-- Restricción vol-target (8.0% objetivo): 25.7%.
+- Restricción vol-target (8.0% objetivo): 25.6%.
 - Restricción presupuesto de caída (8.0% tolerable / 75% caída supuesta del activo): 10.7%.
 - Tope duro: 20.0%.
 - Restricción que manda: multiplicador(0.30).
 - Escalado por multiplicador (régimen y señales, el que más apriete): x0.30.
 - Fear & Greed en 29 (miedo, ≤ 40): tamaño x0.75.
-- DVOL en 36.1: por debajo de 65, sin recorte.
+- DVOL en 35.9: por debajo de 65, sin recorte.
 - Volumen de noticias: fuente apagada por bandera (GDELT pendiente de estabilizarse). No cuenta como ceguera ni como calma: no opina.
-- Sin rupturas regulatorias en 248 notas revisadas.
+- Sin rupturas regulatorias en 442 notas revisadas.
 - 1 fuente no disponible (vix: Falta FRED_API_KEY (gratuita en https://fredaccount.stlouisfed.org/apikeys)): sin recorte todavía, los demás indicadores cubren el mismo régimen.
 - Multiplicador de señales: 0.75 (mínimo de 2 recortes; acotado a [0.00, 1.00] por construcción, nunca amplifica).
 - Banxico decide el 2026-09-24. Si recorta 50 pb, el hurdle anualizado baja de 10.84% a 10.49% y el sleeve objetivo pasa a 0 MXN (+0). Escenario declarado con la curva de hoy, no pronóstico.

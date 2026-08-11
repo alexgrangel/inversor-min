@@ -1,20 +1,20 @@
 {
   "schema_version": "3.1.0",
-  "generated_at": "2026-08-11T02:43:04.378265+00:00",
+  "generated_at": "2026-08-11T20:45:21.765273+00:00",
   "action": "ALLOCATE_TO_CRYPTO",
   "headline": "Aumentar sleeve cripto en 1,440 MXN (objetivo 1,440 MXN, 3.2% del invertible). Costo estimado 2 MXN.",
   "reasons": [
     "Hurdle: CETES 364d al 7.01% nominal → 5.84% neto de ISR (2.64% real). Más prima de riesgo de 5.00% = 10.84% anualizado, equivalente a 10.81% en 364 días.",
     "Vol realizada anualizada: 31.2%.",
-    "Restricción vol-target (8.0% objetivo): 25.7%.",
+    "Restricción vol-target (8.0% objetivo): 25.6%.",
     "Restricción presupuesto de caída (8.0% tolerable / 75% caída supuesta del activo): 10.7%.",
     "Tope duro: 20.0%.",
     "Restricción que manda: multiplicador(0.30).",
     "Escalado por multiplicador (régimen y señales, el que más apriete): x0.30.",
     "Fear & Greed en 29 (miedo, ≤ 40): tamaño x0.75.",
-    "DVOL en 36.1: por debajo de 65, sin recorte.",
+    "DVOL en 35.9: por debajo de 65, sin recorte.",
     "Volumen de noticias: fuente apagada por bandera (GDELT pendiente de estabilizarse). No cuenta como ceguera ni como calma: no opina.",
-    "Sin rupturas regulatorias en 248 notas revisadas.",
+    "Sin rupturas regulatorias en 442 notas revisadas.",
     "1 fuente no disponible (vix: Falta FRED_API_KEY (gratuita en https://fredaccount.stlouisfed.org/apikeys)): sin recorte todavía, los demás indicadores cubren el mismo régimen.",
     "Multiplicador de señales: 0.75 (mínimo de 2 recortes; acotado a [0.00, 1.00] por construcción, nunca amplifica).",
     "Banxico decide el 2026-09-24. Si recorta 50 pb, el hurdle anualizado baja de 10.84% a 10.49% y el sleeve objetivo pasa a 0 MXN (+0). Escenario declarado con la curva de hoy, no pronóstico.",
@@ -33,14 +33,14 @@
     "Tienes ingresos y gastos en MXN. Una posición cripto es una posición larga en USD sin cobertura. A tu tamaño de cuenta, la volatilidad del tipo de cambio es comparable al alfa que puedes esperar."
   ],
   "market": {
-    "usdmxn_fix": 17.1408,
-    "usdmxn_fix_as_of": "2026-08-10",
+    "usdmxn_fix": 17.1092,
+    "usdmxn_fix_as_of": "2026-08-11",
     "inflacion_anual": 0.031200000000000002,
     "tasa_objetivo": 0.065,
     "cetes_curve": {
-      "28": 0.0617,
-      "91": 0.064,
-      "182": 0.0675,
+      "28": 0.064,
+      "91": 0.06480000000000001,
+      "182": 0.0674,
       "364": 0.0701
     },
     "venues": {
@@ -71,15 +71,15 @@
     "weight": 0.032,
     "weight_mxn": 1440.0,
     "binding_constraint": "multiplicador(0.30)",
-    "vol_target_weight": 0.2565989972905607,
+    "vol_target_weight": 0.25629053697350135,
     "drawdown_budget_weight": 0.10666666666666667,
     "hard_cap_weight": 0.2,
-    "realized_vol_annual": 0.3117705090227292,
-    "implied_portfolio_vol": 0.009976656288727334,
+    "realized_vol_annual": 0.31214574265873674,
+    "implied_portfolio_vol": 0.009988663765079576,
     "implied_worst_case_loss_mxn": 1080.0,
     "notes": [
       "Vol realizada anualizada: 31.2%.",
-      "Restricción vol-target (8.0% objetivo): 25.7%.",
+      "Restricción vol-target (8.0% objetivo): 25.6%.",
       "Restricción presupuesto de caída (8.0% tolerable / 75% caída supuesta del activo): 10.7%.",
       "Tope duro: 20.0%.",
       "Restricción que manda: multiplicador(0.30).",
@@ -92,18 +92,18 @@
       {
         "label": "RISK_OFF",
         "size_multiplier": 0.3,
-        "price": 63982.7,
-        "sma_200": 69876.2655,
-        "sma_50": 63327.834,
-        "pct_from_200": -0.08434288034468584,
-        "drawdown_from_1y_high": -0.4871804530863654,
-        "vol_30d": 0.28319560527089205,
+        "price": 63624.9,
+        "sma_200": 69874.4765,
+        "sma_50": 63320.678,
+        "pct_from_200": -0.0894400475401057,
+        "drawdown_from_1y_high": -0.4900482100563853,
+        "vol_30d": 0.2836664891225374,
         "vol_percentile_2y": 0.18085106382978725,
         "signals": [
-          "Precio abajo de la SMA200 (-8.4%).",
+          "Precio abajo de la SMA200 (-8.9%).",
           "SMA50 abajo de SMA200.",
-          "Caída desde el máximo de 12 meses: -48.7%.",
-          "Vol 30d anualizada: 28.3% (percentil 18% de 2 años).",
+          "Caída desde el máximo de 12 meses: -49.0%.",
+          "Vol 30d anualizada: 28.4% (percentil 18% de 2 años).",
           "Caída > 35% y precio bajo SMA200: tamaño limitado a 30%.",
           "Régimen RISK_OFF: multiplicador de tamaño 0.30."
         ]
@@ -111,18 +111,18 @@
       {
         "label": "RISK_OFF",
         "size_multiplier": 0.3,
-        "price": 1876.58,
-        "sma_200": 2039.4282500000002,
-        "sma_50": 1808.1568,
-        "pct_from_200": -0.07984995304443798,
-        "drawdown_from_1y_high": -0.6114741200828158,
-        "vol_30d": 0.3974952202782405,
+        "price": 1878.94,
+        "sma_200": 2039.4400500000002,
+        "sma_50": 1808.204,
+        "pct_from_200": -0.07869809656822224,
+        "drawdown_from_1y_high": -0.6109855072463768,
+        "vol_30d": 0.3975835032673347,
         "vol_percentile_2y": 0.06382978723404255,
         "signals": [
-          "Precio abajo de la SMA200 (-8.0%).",
+          "Precio abajo de la SMA200 (-7.9%).",
           "SMA50 abajo de SMA200.",
           "Caída desde el máximo de 12 meses: -61.1%.",
-          "Vol 30d anualizada: 39.7% (percentil 6% de 2 años).",
+          "Vol 30d anualizada: 39.8% (percentil 6% de 2 años).",
           "Caída > 35% y precio bajo SMA200: tamaño limitado a 30%.",
           "Régimen RISK_OFF: multiplicador de tamaño 0.30."
         ]
@@ -177,7 +177,7 @@
       "Operaciones completas permitidas al año: 1.7.",
       "Un movimiento de precio menor al breakeven deja la operación en pérdida incluso si la dirección fue correcta."
     ],
-    "min_notional_check": "Pata más chica: 21.00 USD vs mínimo 10.00 USD (OK)."
+    "min_notional_check": "Pata más chica: 21.04 USD vs mínimo 10.00 USD (OK)."
   },
   "allocation_mxn": {
     "reserva_liquidez": 5000.0,
@@ -197,7 +197,7 @@
     "explicacion": "Para que el sleeve cripto haya valido la pena frente a CETES, tiene que rendir al menos 11.11% EN PESOS en 364 días. Ese rendimiento en pesos es rendimiento en dólares MÁS movimiento del tipo de cambio."
   },
   "fx": {
-    "usdmxn_fix": 17.1408,
+    "usdmxn_fix": 17.1092,
     "sensibilidad": [
       {
         "escenario_mxn": -0.1,
@@ -230,30 +230,30 @@
   "data_freshness": {
     "fix_usdmxn": {
       "series_id": "SF43718",
-      "value": 17.1408,
-      "as_of": "2026-08-10",
-      "stale_days": 1,
+      "value": 17.1092,
+      "as_of": "2026-08-11",
+      "stale_days": 0,
       "stale": false
     },
     "cetes_28": {
       "series_id": "SF60633",
-      "value": 6.17,
-      "as_of": "2026-08-04",
-      "stale_days": 7,
+      "value": 6.4,
+      "as_of": "2026-08-11",
+      "stale_days": 0,
       "stale": false
     },
     "cetes_91": {
       "series_id": "SF60634",
-      "value": 6.4,
-      "as_of": "2026-08-04",
-      "stale_days": 7,
+      "value": 6.48,
+      "as_of": "2026-08-11",
+      "stale_days": 0,
       "stale": false
     },
     "cetes_182": {
       "series_id": "SF60635",
-      "value": 6.75,
-      "as_of": "2026-08-04",
-      "stale_days": 7,
+      "value": 6.74,
+      "as_of": "2026-08-11",
+      "stale_days": 0,
       "stale": false
     },
     "cetes_364": {
@@ -266,8 +266,8 @@
     "tasa_objetivo": {
       "series_id": "SF61745",
       "value": 6.5,
-      "as_of": "2026-08-11",
-      "stale_days": 0,
+      "as_of": "2026-08-12",
+      "stale_days": -1,
       "stale": false
     },
     "inpc_anual": {
@@ -279,14 +279,14 @@
     },
     "precio_BTC": {
       "series_id": "kraken:BTC",
-      "value": 63982.7,
+      "value": 63624.9,
       "as_of": "2026-08-11",
       "stale_days": 0,
       "stale": false
     },
     "precio_ETH": {
       "series_id": "kraken:ETH",
-      "value": 1876.58,
+      "value": 1878.94,
       "as_of": "2026-08-11",
       "stale_days": 0,
       "stale": false
@@ -297,9 +297,9 @@
     "blockers": [],
     "razones": [
       "Fear & Greed en 29 (miedo, ≤ 40): tamaño x0.75.",
-      "DVOL en 36.1: por debajo de 65, sin recorte.",
+      "DVOL en 35.9: por debajo de 65, sin recorte.",
       "Volumen de noticias: fuente apagada por bandera (GDELT pendiente de estabilizarse). No cuenta como ceguera ni como calma: no opina.",
-      "Sin rupturas regulatorias en 248 notas revisadas.",
+      "Sin rupturas regulatorias en 442 notas revisadas.",
       "1 fuente no disponible (vix: Falta FRED_API_KEY (gratuita en https://fredaccount.stlouisfed.org/apikeys)): sin recorte todavía, los demás indicadores cubren el mismo régimen.",
       "Multiplicador de señales: 0.75 (mínimo de 2 recortes; acotado a [0.00, 1.00] por construcción, nunca amplifica)."
     ],
@@ -574,8 +574,8 @@
     "signals": {
       "enabled": true,
       "gdelt_enabled": false,
-      "gdelt_consulta": "bitcoin OR ethereum OR criptomonedas",
-      "dof_enabled": false
+      "gdelt_consulta": "(bitcoin OR ethereum OR criptomonedas)",
+      "dof_enabled": true
     },
     "required_risk_premium": 0.05,
     "max_staleness_days": 5,
