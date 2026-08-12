@@ -2,7 +2,7 @@
 
 **Aumentar sleeve cripto en 1,440 MXN (objetivo 1,440 MXN, 3.2% del invertible). Costo estimado 2 MXN.**
 
-_Generado: 2026-08-11T20:45:21.765273+00:00 · schema 3.1.0_
+_Generado: 2026-08-12T20:45:30.649727+00:00 · schema 3.1.0_
 
 ## Costo de oportunidad
 
@@ -66,7 +66,6 @@ Contra eso: CETES te paga **2,545 MXN** al año, neto, sin volatilidad.
 
 | Fecha | Evento | Verificado |
 |---|---|---|
-| 2026-08-11 | Subasta primaria de CETES | derivado |
 | 2026-08-12 | Publicación de CPI de EE. UU. | ✓ |
 | 2026-08-18 | Subasta primaria de CETES | derivado |
 | 2026-08-25 | Subasta primaria de CETES | derivado |
@@ -95,17 +94,17 @@ _El sizing de escenarios suma el costo de oportunidad de CETES al presupuesto de
 
 ## Razonamiento
 - Hurdle: CETES 364d al 7.01% nominal → 5.84% neto de ISR (2.64% real). Más prima de riesgo de 5.00% = 10.84% anualizado, equivalente a 10.81% en 364 días.
-- Vol realizada anualizada: 31.2%.
-- Restricción vol-target (8.0% objetivo): 25.6%.
+- Vol realizada anualizada: 30.1%.
+- Restricción vol-target (8.0% objetivo): 26.5%.
 - Restricción presupuesto de caída (8.0% tolerable / 75% caída supuesta del activo): 10.7%.
 - Tope duro: 20.0%.
 - Restricción que manda: multiplicador(0.30).
 - Escalado por multiplicador (régimen y señales, el que más apriete): x0.30.
-- Fear & Greed en 29 (miedo, ≤ 40): tamaño x0.75.
-- DVOL en 35.9: por debajo de 65, sin recorte.
+- Fear & Greed en 27 (miedo, ≤ 40): tamaño x0.75.
+- DVOL en 35.8: por debajo de 65, sin recorte.
+- VIX en 15.3: por debajo de 25, sin recorte.
 - Volumen de noticias: fuente apagada por bandera (GDELT pendiente de estabilizarse). No cuenta como ceguera ni como calma: no opina.
-- Sin rupturas regulatorias en 442 notas revisadas.
-- 1 fuente no disponible (vix: Falta FRED_API_KEY (gratuita en https://fredaccount.stlouisfed.org/apikeys)): sin recorte todavía, los demás indicadores cubren el mismo régimen.
+- Sin rupturas regulatorias en 524 notas revisadas.
 - Multiplicador de señales: 0.75 (mínimo de 2 recortes; acotado a [0.00, 1.00] por construcción, nunca amplifica).
 - Banxico decide el 2026-09-24. Si recorta 50 pb, el hurdle anualizado baja de 10.84% a 10.49% y el sleeve objetivo pasa a 0 MXN (+0). Escenario declarado con la curva de hoy, no pronóstico.
 - Costo por round-trip: 0.300% del monto rotado (0.100% comisión + 0.050% slippage, x2 lados).
@@ -116,8 +115,6 @@ _El sizing de escenarios suma el costo de oportunidad de CETES al presupuesto de
 - Ganancia esperada (156 MXN) por debajo de la exención anual restante (128,384 MXN). ISR efectivo 0%. SUPUESTO NO CONFIRMADO: exención 3xUMA aplicable a activos virtuales.
 
 ## Advertencias
-- ⚠️ Señales — fuente no disponible: vix: Falta FRED_API_KEY (gratuita en https://fredaccount.stlouisfed.org/apikeys). Se omite FRED; su ausencia se reporta, no se sustituye por un default.
-- ⚠️ Señales — fuente no disponible: vix: sin dato.
 - ⚠️ Sleeve de 1,440 MXN: aun con cripto +50%, el impacto en el portafolio total es +1.44%. Es ruido. Considera no tener la posición y ahorrarte el trabajo operativo y fiscal.
 - ⚠️ Tienes ingresos y gastos en MXN. Una posición cripto es una posición larga en USD sin cobertura. A tu tamaño de cuenta, la volatilidad del tipo de cambio es comparable al alfa que puedes esperar.
 
