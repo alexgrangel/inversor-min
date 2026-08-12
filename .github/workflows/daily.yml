@@ -81,6 +81,7 @@ jobs:
             --isr "${{ vars.ISR_MARGINAL || '0.30' }}" \
             --held "${{ github.event.inputs.held_mxn || vars.HELD_MXN || '0' }}" \
             --fees-ytd "${{ vars.FEES_YTD_MXN || '0' }}" \
+            --crypto-gains-ytd "${{ vars.CRYPTO_GAINS_YTD_MXN || '0' }}" \
             --out ../snapshots
           code=$?
           set -e
