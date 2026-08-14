@@ -1,6 +1,37 @@
 {
-  "generated_at": "2026-08-13T20:43:50.322227+00:00",
+  "generated_at": "2026-08-14T20:32:07.072924+00:00",
   "schema_version": "3.1.0",
-  "notifications": [],
+  "notifications": [
+    {
+      "trigger": "BLOCKER_RAISED",
+      "priority": "HIGH",
+      "title": "Bloqueo activado",
+      "body": "El motor dejó de emitir recomendación operable: hay al menos un bloqueo duro activo. Un bloqueo no es una advertencia; es un no.",
+      "razonamiento": [
+        "Bloqueo nuevo: cetes_364: 10 días de antigüedad (límite 9).",
+        "Acción antes del bloqueo: ALLOCATE_TO_CRYPTO. Acción publicada hoy: BLOCKED_STALE_DATA.",
+        "Regla 4 del repo: los datos rancios y los presupuestos agotados bloquean, no degradan. No se publica una recomendación derivada de datos incompletos."
+      ],
+      "estrategia": [
+        "No operes mientras el bloqueo esté activo. Ninguna orden derivada de este snapshot es válida.",
+        "Deja el capital donde está: la posición actual no requiere acción para sostenerse, y mover dinero bajo bloqueo gasta comisiones sin información.",
+        "INVALIDACIÓN: el bloqueo se levanta solo cuando la corrida diaria vuelva a publicar una acción operable. No lo anticipes ejecutando a mano."
+      ],
+      "changed_from": {
+        "blockers": []
+      },
+      "changed_to": {
+        "blockers": [
+          "cetes_364: 10 días de antigüedad (límite 9)."
+        ],
+        "nuevos": [
+          "cetes_364: 10 días de antigüedad (límite 9)."
+        ]
+      },
+      "fired_at": "2026-08-14T20:32:07.072924+00:00",
+      "dedup_key": "BLOCKER_RAISED:97a6e3f44e9d",
+      "es_orden_ejecutable": false
+    }
+  ],
   "suppressed": []
 }
